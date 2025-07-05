@@ -1,0 +1,16 @@
+# Privat Data
+input/*
+output/*
+.env
+
+# Python-generated files
+__marimo__/
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
