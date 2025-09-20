@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.13.6"
+__generated_with = "0.16.0"
 app = marimo.App(width="medium", app_title="Personalauswertung")
 
 with app.setup:
@@ -315,7 +315,7 @@ def _(df_rollen, erster_tag_jahr, zeitpunkt_auswertung):
                 pl.col("Start").ge(erster_tag_jahr) & pl.col("Start").le(zeitpunkt_auswertung)
             ) |
             (
-                pl.col("Ende").ge(erster_tag_jahr) & pl.col("Ende").le(zeitpunkt_auswertung)
+                pl.col("Ende").ge(erster_tag_jahr-dt.timedelta(days=1)) & pl.col("Ende").le(zeitpunkt_auswertung)
             ),
         ).sort("Start")
 
@@ -338,6 +338,7 @@ def _(df_rollen, erster_tag_jahr, zeitpunkt_auswertung):
                 pl.col("Ende").le(zeitpunkt_auswertung)
             )
             .then(pl.lit('Ausgetreten'))
+            .otherwise(pl.lit('Personalbewegung'))
             .alias('Personalbewegung')
         )
     )
@@ -353,7 +354,10 @@ def _(df_rollen_personalbewegung):
             pl.col('FEUERnetz-ID').is_in(fn_ids_personalbewegung)
         )
         .group_by('FEUERnetz-ID')
-        .agg(pl.col("Personalbewegung").first().alias('Personalbewegung'))
+        .agg(
+            pl.col("Personalbewegung").first().alias('Personalbewegung'),
+            pl.col("Einheit").first().alias('Einheit Ehemals')
+        )
     )
 
     df_rollen_personalbewegung_grouped_multiple = (
@@ -600,6 +604,14 @@ def _(
         # Ortsteil zur Abteilung
         pl.col('Einheit Aktuell').str.split(by=' ').list.last().alias('Ortsteil'),
 
+        # Personalbewegung vertiefen
+        pl.when(
+            pl.col('Einheit Aktuell').is_not_null(),
+            pl.col('Einheit Alt').is_not_null(),        
+        ).then(
+            pl.col('Einheit Alt').str.split(by=' ').list.first().str.replace('Einheit', 'Einsatzabteilung') + pl.lit(' -> ') + pl.col('Einheit Aktuell').str.split(by=' ').list.first()
+        ).alias('Personalbewegung'),
+
     ]).with_columns([
 
         # Altersgruppe ermitteln           
@@ -674,12 +686,7 @@ def _(
 
 
 @app.cell
-def _(
-    datum_befoerderung,
-    datum_jahreshauptversammlung_auswertung,
-    df_joined,
-    zeitpunkt_auswertung,
-):
+def _(datum_befoerderung, df_joined):
     df_promo = df_joined.filter(
         pl.col('Abteilung').eq('Einsatzabteilung') | pl.col('Abteilung').eq('Unterstützungseinheit'),
         pl.col('Rolle').str.starts_with('Mitglied')
@@ -697,13 +704,13 @@ def _(
         .when(
             pl.col('Dienstgrad Ernennung').is_null(),
             pl.col('Personalbewegung').eq('Neuaufnahme'),
-            pl.col('Einheit Aktuell Start').dt.offset_by('6mo').le(datum_jahreshauptversammlung_auswertung)
+            pl.col('Einheit Aktuell Start').dt.offset_by('6mo').le(datum_befoerderung.value)
         )
         .then(pl.lit('FF / FM'))
 
         ## Anwärter und Mitgliedschaft von 6 Monaten -> Feuerwehrmann / -frau    
         .when(
-            pl.col('Einheit Aktuell Start').dt.offset_by('6mo').le(datum_jahreshauptversammlung_auswertung),
+            pl.col('Einheit Aktuell Start').dt.offset_by('6mo').le(datum_befoerderung.value),
             pl.col('Dienstgrad FF(lang)').str.contains('Anwärter')
         )
         .then(pl.lit('FF / FM'))
@@ -721,52 +728,52 @@ def _(
         ### Beförderung zum Stadtbrandinspektor
         .when(
             pl.col('Dienstgrad FF').ne("StBI"),
-            pl.col('Stabsarbeit').le(datum_jahreshauptversammlung_auswertung),
-            pl.col('Leiter einer Feuerwehr').le(datum_jahreshauptversammlung_auswertung),       
+            pl.col('Stabsarbeit').le(datum_befoerderung.value),
+            pl.col('Leiter einer Feuerwehr').le(datum_befoerderung.value),       
         )
         .then(pl.lit('StBI'))
 
         ### Beförderung zum Brandoberinspektor
         .when(
             pl.col('Dienstgrad FF').eq("BI"),
-            pl.col('Verbandsführer').le(datum_jahreshauptversammlung_auswertung),      
+            pl.col('Verbandsführer').le(datum_befoerderung.value),      
         )
         .then(pl.lit('BOI'))
 
         ### Beförderung zum Brandinspektor
         .when(
             pl.col('Dienstgrad FF').is_in(["OBM", "HBM"]),
-            pl.col('Zugführer').le(datum_jahreshauptversammlung_auswertung),      
+            pl.col('Zugführer').le(datum_befoerderung.value),      
         )
         .then(pl.lit('BI'))
 
         ### Beförderung vom Oberfeuerwehrmann zum Brandmeister
         .when(
             pl.col('Dienstgrad FF').is_in(["OFF", "OFM"]),
-            pl.col('Dienstgrad Ernennung').dt.offset_by('1y').le(zeitpunkt_auswertung),
-            pl.col('Gruppenführer').le(datum_jahreshauptversammlung_auswertung),      
+            pl.col('Dienstgrad Ernennung').dt.offset_by('1y').le(datum_befoerderung.value),
+            pl.col('Gruppenführer').le(datum_befoerderung.value),      
         )
         .then(pl.lit('BM'))
 
         ### Beförderung zum Brandmeister
         .when(
             pl.col('Dienstgrad FF').is_in(["HFF", "HFM", "UBM"]),
-            pl.col('Gruppenführer').le(datum_jahreshauptversammlung_auswertung),      
+            pl.col('Gruppenführer').le(datum_befoerderung.value),      
         )
         .then(pl.lit('BM'))
 
         ### Beförderung vom Hauptfeuerwehrmann zum Unterbrandmeister
         .when(
             pl.col('Dienstgrad FF').is_in(["HFF", "HFM"]),
-            pl.col('Truppführer').le(zeitpunkt_auswertung),
+            pl.col('Truppführer').le(datum_befoerderung.value),
         )
         .then(pl.lit('UBM'))
 
         ### Beförderung vom Oberfeuerwehrmann zum Unterbrandmeister
         .when(
             pl.col('Dienstgrad FF').is_in(["OFF", "OFM"]),
-            pl.col('Dienstgrad Ernennung').dt.offset_by('1y').le(zeitpunkt_auswertung),
-            pl.col('Truppführer').le(zeitpunkt_auswertung),
+            pl.col('Dienstgrad Ernennung').dt.offset_by('1y').le(datum_befoerderung.value),
+            pl.col('Truppführer').le(datum_befoerderung.value),
         )
         .then(pl.lit('UBM'))
 
@@ -776,32 +783,31 @@ def _(
         ### Beförderung vom Feuerwehrmann zum Oberfeuerwehrmann
         .when(
             pl.col('Dienstgrad FF').is_in(["FF", "FM"]),
-            pl.col('Truppmann').le(zeitpunkt_auswertung),
-            pl.col('Dienstgrad Ernennung').dt.offset_by('2y').le(zeitpunkt_auswertung),        
+            pl.col('Truppmann').le(datum_befoerderung.value),
+            pl.col('Dienstgrad Ernennung').dt.offset_by('2y').le(datum_befoerderung.value),        
         )
         .then(pl.lit('OFF / OFM'))
 
         ### Beförderung vom Oberfeuerwehrmann zum Hauptfeuerwehrmann
         .when(
             pl.col('Dienstgrad FF').is_in(["OFF", "OFM"]),
-            pl.col('Dienstgrad Ernennung').dt.offset_by('5y').le(zeitpunkt_auswertung),        
+            pl.col('Dienstgrad Ernennung').dt.offset_by('5y').le(datum_befoerderung.value),        
         )
         .then(pl.lit('HFF / HFM'))
 
         ### Beförderung vom Brandmeister zum Oberbrandmeister
         .when(
             pl.col('Dienstgrad FF').eq('BM'),
-            pl.col('Dienstgrad Ernennung').dt.offset_by('2y').le(zeitpunkt_auswertung),   
+            pl.col('Dienstgrad Ernennung').dt.offset_by('2y').le(datum_befoerderung.value),   
         )
         .then(pl.lit('OBM'))
 
         ### Beförderung vom Oberbrandmeister zum Hauptbrandmeister
         .when(
             pl.col('Dienstgrad FF').eq('OBM'),
-            pl.col('Dienstgrad Ernennung').dt.offset_by('5y').le(zeitpunkt_auswertung),        
+            pl.col('Dienstgrad Ernennung').dt.offset_by('5y').le(datum_befoerderung.value),        
         )
         .then(pl.lit('HBM'))
-
 
         .alias('Beförderung')
     ).with_columns(
@@ -812,27 +818,27 @@ def _(
         # Beförderung zum Stadtbrandinspektor
         pl.when(
             pl.col('Beförderung').eq('StBI'),
-            pl.col('Leiter einer Feuerwehr').gt(zeitpunkt_auswertung)
+            pl.col('Leiter einer Feuerwehr').ge(datum_befoerderung.value)
         )
         .then(pl.col('Leiter einer Feuerwehr'))
 
         .when(
             pl.col('Beförderung').eq('StBI'),
-            pl.col('Stabsarbeit').gt(zeitpunkt_auswertung)
+            pl.col('Stabsarbeit').ge(datum_befoerderung.value)
         )
         .then(pl.col('Stabsarbeit'))
 
         # Beförderung zum Brandoberinspektor
         .when(
             pl.col('Beförderung').eq('BOI'),
-            pl.col('Verbandsführer').gt(zeitpunkt_auswertung)
+            pl.col('Verbandsführer').ge(datum_befoerderung.value)
         )
         .then(pl.col('Verbandsführer'))
 
         # Beförderung zum Brandinspektor
         .when(
             pl.col('Beförderung').eq('BI'),
-            pl.col('Zugführer').gt(zeitpunkt_auswertung)
+            pl.col('Zugführer').ge(datum_befoerderung.value)
         )
         .then(pl.col('Zugführer'))
 
@@ -843,7 +849,7 @@ def _(
         # Beförderung zum Unterbrandmeister
         .when(
             pl.col('Beförderung').eq('UMB'),
-            pl.col('Truppführer').gt(zeitpunkt_auswertung)
+            pl.col('Truppführer').ge(datum_befoerderung.value)
         )
         .then(pl.col('Truppführer'))
 
@@ -896,7 +902,8 @@ def _():
 def _(df):
     mo.ui.dataframe(
         df=df.filter(
-            pl.col('Vorname').eq('Swen'),
+            # pl.col('Vorname').eq('Max'),
+            # pl.col('Nachname').eq('Mustermann'),
             # pl.col('Dienstgrad Ernennung').is_not_null(),
             # pl.col('Abteilung').is_not_null(),
             # pl.col('Abteilung').eq('Einsatzabteilung') |
@@ -905,6 +912,8 @@ def _(df):
             # pl.col('Dienstzeit').dt.total_days().gt(365),
             # pl.col('Dienstgrad FF(lang)').str.contains('Anwärter'),
             # pl.col('Beförderung').is_not_null(),
+            # pl.col('Einheit Alt').is_not_null(),
+            # pl.col('Einheit Aktuell').is_not_null(),
             #pl.col('Beförderung').eq('FFA / FMA'),
         )
     )
@@ -932,7 +941,7 @@ def _(df):
 
 
 @app.cell
-def _(ehrung_land, ehrung_verband):
+def _(datum_befoerderung, ehrung_land, ehrung_verband):
     def export_daten_jahresbericht(df: pl.DataFrame) -> None:
         befoerderungen = {
             'FFA / FMA': 'FMA',
@@ -948,20 +957,45 @@ def _(ehrung_land, ehrung_verband):
             'StBI': 'StBI',
         }
 
-        df = df.filter(
+        df.filter(
             pl.col('Rolle').is_not_null(),
-            pl.col('Beförderung').is_not_null()
+            pl.col('Beförderung').is_not_null(),
+        ).select(
+            pl.col('Nachname'),
+            pl.col('Vorname'),
+            pl.col('Ortsteil'),
+            pl.col('Dienstgrad FF'),
+            pl.col('Beförderung'),
+            pl.col('Beförderungs Datum'),
+        ).write_csv(
+            os.path.join(db.ORDNER_AUSGABE, f'befoerderungen_{datum_befoerderung.value.year}.csv')
         )
-    
+
+        df.filter(
+            pl.col('Rolle').is_not_null(),
+            pl.col('Ehrung').is_not_null(),
+        ).select(
+            pl.col('Nachname'),
+            pl.col('Vorname'),
+            pl.col('Ortsteil'),
+            pl.col('Dienstgrad FF'),
+            pl.col('Beförderung'),
+            pl.col('Ehrung'),
+        ).write_csv(
+            os.path.join(db.ORDNER_AUSGABE, f'ehrungen_{datum_befoerderung.value.year}.csv')
+        )
+
         for key_b, value_b in befoerderungen.items():
             df.filter(
+                pl.col('Rolle').is_not_null(),
+                pl.col('Beförderung').is_not_null(),
                 pl.col('Beförderung').eq(key_b)
             ).select(
                 pl.col('Nachname'),
                 pl.col('Vorname'),
-                pl.col('Ortsteil')
+                pl.col('Ortsteil'),
             ).write_csv(
-                os.path.join(db.pfad_jahresbericht, f'{value_b}.csv')
+                os.path.join(db.ORDNER_AUSGABE, db.ORDNER_JAHRESBERICHT, f'{value_b}.csv')
             )
 
         ehrungen = {
@@ -972,6 +1006,7 @@ def _(ehrung_land, ehrung_verband):
         for key_e, value_e in ehrungen.items():
             for jahr in value_e:
                 df.filter(
+                    pl.col('Rolle').is_not_null(),
                     pl.col('Ehrung').eq(f'{key_e} - {jahr} Jahre')
                 ).select(
                     pl.col('Nachname'),
@@ -1022,7 +1057,7 @@ def _(df, zeitpunkt_auswertung):
 def _(df, switch_grafik_value):
     def grafik_mitglieder_alter_box(df: pl.DataFrame, show: bool = False) -> plt.gca:
         if not switch_grafik_value: return
-        
+
         plt.figure()
         g = sns.histplot(
             df.to_pandas(),
@@ -1031,7 +1066,7 @@ def _(df, switch_grafik_value):
             hue_order=['M', 'W'],
             palette="deep",
             multiple='stack',
-            binwidth=3
+            bins=range(6, df.select(pl.max("Alter")).item(), 2)
         )
         plt.axvline(10, linestyle=':', color='blue')
         plt.axvline(18, linestyle=':', color='green')
@@ -1059,7 +1094,7 @@ def _(df, switch_grafik_value):
 def _(df_grafik, switch_grafik_value):
     def grafik_mitglieder_alter(df: pl.DataFrame, show: bool = False) -> plt.gca:
         if not switch_grafik_value: return
-        
+
         plt.figure()
         g = sns.displot(
             data=df.to_pandas(),
@@ -1085,7 +1120,7 @@ def _(df_grafik, switch_grafik_value):
         g.legend.set_title('Abteilung')
 
         plt.savefig(os.path.join(db.pfad_grafik, 'Mitglieder_alter.png'), bbox_inches = 'tight')
-    
+
         plt.tight_layout()
         return plt.gca()
 
@@ -1097,7 +1132,7 @@ def _(df_grafik, switch_grafik_value):
 def _(abteilungen, df_grafik, switch_grafik_value):
     def grafik_mitglieder_alter_box_orga(df: pl.DataFrame, show: bool = False) -> plt.gca:
         if not switch_grafik_value: return
-        
+
         plt.figure()
         g = sns.boxplot(
             data=df.to_pandas(),
@@ -1135,7 +1170,7 @@ def _(abteilungen, df_grafik, switch_grafik_value):
 def _(df_grafik, ortsteile, switch_grafik_value):
     def grafik_mitlgieder_einheit(df: pl.DataFrame, show: bool = False) -> plt.gca:
         if not switch_grafik_value: return
-    
+
         plt.figure()
         g = sns.boxplot(
             data=df.sort(by='Ortsteil').to_pandas(),
@@ -1171,7 +1206,7 @@ def _(df_grafik, ortsteile, switch_grafik_value):
 def _(df_grafik, ortsteile, switch_grafik_value):
     def grafik_einheit_fuehrungskraefte(df: pl.DataFrame, show: bool = False) -> plt.gca:
         if not switch_grafik_value: return
-    
+
         fig = plt.figure()
         g = sns.boxplot(
             data=df.filter(
@@ -1210,7 +1245,7 @@ def _(df_grafik, ortsteile, switch_grafik_value):
 def _(abteilungen, df_grafik, ortsteile, switch_grafik_value):
     def grafik_mitglieder_einheit_detail(df: pl.DataFrame, ortsteil: str, show: bool = False):
         if not switch_grafik_value: return
-        
+
         plt.figure()
         g = sns.displot(
             data=df.filter(pl.col('Ortsteil').eq(ortsteil)).sort(by=["Altersgruppe"]).to_pandas(),
@@ -1263,7 +1298,7 @@ def _(abteilungen, df_grafik, ortsteile, switch_grafik_value):
 def _(df_grafik, switch_grafik_value):
     def grafik_mitglieder_jufw_kifw(df: pl.DataFrame, show: bool = False):
         if not switch_grafik_value: return
-        
+
         plt.figure()
         g = sns.displot(
             data=df.filter(pl.col.Abteilung.eq('Kinderfeuerwehr') | pl.col.Abteilung.eq('Jugendfeuerwehr')).to_pandas(),
@@ -1299,7 +1334,7 @@ def _(df_grafik, switch_grafik_value):
 def _(df_grafik, ortsteile, switch_grafik_value):
     def grafik_agt_einheit(df: pl.DataFrame, show: bool = False):
         if not switch_grafik_value: return
-    
+
         plt.figure()
         g = sns.countplot(
             data=df.filter(
@@ -1339,7 +1374,7 @@ def _(df_grafik, ortsteile, switch_grafik_value):
 def _(df_grafik, switch_grafik_value):
     def grafik_agt_alter(df: pl.DataFrame, show: bool = False):
         if not switch_grafik_value: return
-        
+
         plt.figure()
         g = sns.histplot(
             data=df.filter(
@@ -1352,7 +1387,7 @@ def _(df_grafik, switch_grafik_value):
             hue='G26.3 bool',
             palette="deep",
             multiple='stack',
-            #binwidth=3,
+            bins=range(18, 67, 3),
         )
 
         g.figure.suptitle('Übersicht Atemschutzgeräteträger Gesamt')
@@ -1381,7 +1416,7 @@ def _(df_grafik, switch_grafik_value):
 def _(df_grafik, ortsteile, switch_grafik_value):
     def grafik_csa_einheit(df: pl.DataFrame, show: bool = False):
         if not switch_grafik_value: return
-        
+
         plt.figure()
         g = sns.countplot(
             data=df.filter(
@@ -1420,7 +1455,7 @@ def _(df_grafik, ortsteile, switch_grafik_value):
 def _(df_grafik, switch_grafik_value):
     def grafik_csa_alter(df: pl.DataFrame, show: bool = False):
         if not switch_grafik_value: return
-        
+
         plt.figure()
         g = sns.histplot(
             data=df.filter(
@@ -1433,7 +1468,7 @@ def _(df_grafik, switch_grafik_value):
             hue='G26.3 bool',
             palette="deep",
             multiple='stack',
-            #binwidth=3,
+            bins=range(18, 67, 3),
         )
 
         plt.legend(labels=['tauglich', 'nicht tauglich'])
@@ -1462,7 +1497,7 @@ def _(df_grafik, switch_grafik_value):
 def _(df_grafik, ortsteile, switch_grafik_value):
     def grafik_lkw_einheit(df: pl.DataFrame, show: bool = False):
         if not switch_grafik_value: return
-        
+
         plt.figure()
         g = sns.countplot(
             data=df.filter(
@@ -1500,7 +1535,7 @@ def _(df_grafik, ortsteile, switch_grafik_value):
 def _(df_grafik, switch_grafik_value):
     def grafik_lkw_alter(df: pl.DataFrame, show: bool = False):
         if not switch_grafik_value: return
-        
+
         plt.figure()
         g = sns.histplot(
             data=df.filter(
@@ -1514,7 +1549,7 @@ def _(df_grafik, switch_grafik_value):
             hue_order=['M', 'W'],
             palette="deep",
             multiple='stack',
-            #binwidth=3,
+            bins=range(18, 67, 3),
         )
 
         g.yaxis.set_major_locator(MaxNLocator(integer=True))
@@ -1543,7 +1578,7 @@ def _(df_grafik, switch_grafik_value):
 def _(df_grafik, ortsteile, switch_grafik_value):
     def grafik_mitglieder_aufnahme(df: pl.DataFrame, show: bool = False):
         if not switch_grafik_value: return
-     
+
         plt.figure()
         g = sns.countplot(
             data=df.filter(pl.col("Personalbewegung").eq('Neuaufnahme')).to_pandas(),
@@ -1574,11 +1609,11 @@ def _(df_grafik, switch_grafik_value):
     # TODO: Funktion üperprüfen
     def grafik_mitglieder_verlust(df: pl.DataFrame, show: bool = False):
         if not switch_grafik_value: return
-     
+
         plt.figure()
         g = sns.countplot(
-            data=df.filter(pl.col("Personalbewegung").eq('Ausgetreten')).to_pandas(),
-            y="Einheit Alt",
+            data=df.filter(pl.col("Einheit Ehemals").is_not_null()).to_pandas(),
+            y="Einheit Ehemals",
             hue='Geschlecht',
             hue_order=['M', 'W'],
             palette='deep',
@@ -1605,17 +1640,17 @@ def _(df_grafik, ortsteile, switch_grafik_value):
     # TODO: Funktion üperprüfen
 
     def grafik_mitglieder_wechsel(df: pl.DataFrame, ortsteil: str, show: bool = False):
-        #if not switch_grafik_value: return
-     
+        if not switch_grafik_value: return
+
         data=df.filter(
-            pl.col("Personalbewegung").eq('Wechsel'),
+            pl.col("Personalbewegung").str.contains('->'),
             pl.col('Ortsteil').eq(ortsteil)
         )
         if not data.height > 0:
             return None
         plt.figure()
         g = sns.countplot(
-            data=data,
+            data=data.to_pandas(),
             y='Einheit Aktuell',
             hue="Einheit Alt",
             palette='deep',

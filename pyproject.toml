@@ -1,6 +1,6 @@
 [project]
 name = "FEUERnetz"
-version = "0.1.1"
+version = "0.1.2"
 description = "Erweiterte Auswertung der Daten aus FEUERnetz"
 readme = "README.md"
 requires-python = ">=3.12"
