@@ -311,11 +311,12 @@ def _(df_rollen, erster_tag_jahr, zeitpunkt_auswertung):
             pl.col("Rolle").str.to_lowercase().str.contains("mitglied"),
             pl.col("Einheit").str.contains("Extern").not_(),
             pl.col("Einheit").str.contains("Gruppe").not_(),
+            pl.col("Einheit").str.contains("Vorgeplant").not_(),
             (
                 pl.col("Start").ge(erster_tag_jahr) & pl.col("Start").le(zeitpunkt_auswertung)
             ) |
             (
-                pl.col("Ende").ge(erster_tag_jahr-dt.timedelta(days=1)) & pl.col("Ende").le(zeitpunkt_auswertung)
+                pl.col("Ende").ge(erster_tag_jahr) & pl.col("Ende").le(zeitpunkt_auswertung)
             ),
         ).sort("Start")
 
@@ -346,7 +347,61 @@ def _(df_rollen, erster_tag_jahr, zeitpunkt_auswertung):
 
 
 @app.cell
-def _(df_rollen_personalbewegung):
+def _(df_rollen, erster_tag_jahr, zeitpunkt_auswertung):
+    df_rollen_personalbewegung_vor = (
+        df_rollen.filter(
+            pl.col("Rolle").str.to_lowercase().str.contains("mitglied"),
+            pl.col("Einheit").str.contains("Extern").not_(),
+            pl.col("Einheit").str.contains("Gruppe").not_(),
+            pl.col("Einheit").str.contains("Vorgeplant").not_(),        
+            (
+                pl.col("Start").lt(erster_tag_jahr)
+            ),
+        ).sort("Start")
+
+        .with_columns(
+            pl.when(
+                pl.col("Ende").is_null() | pl.col("Ende").le(zeitpunkt_auswertung)
+            )
+            .then(pl.lit('Übertritt vor'))
+            .otherwise(pl.lit('Personalbewegung'))
+            .alias('Personalbewegung')
+        )
+    )
+    return (df_rollen_personalbewegung_vor,)
+
+
+@app.cell
+def _(df_rollen, zeitpunkt_auswertung):
+    df_rollen_personalbewegung_folge = (
+        df_rollen.filter(
+            pl.col("Rolle").str.to_lowercase().str.contains("mitglied"),
+            pl.col("Einheit").str.contains("Extern").not_(),
+            pl.col("Einheit").str.contains("Gruppe").not_(),
+            pl.col("Einheit").str.contains("Vorgeplant").not_(),        
+            (
+                pl.col("Start").gt(zeitpunkt_auswertung)
+            ),
+        ).sort("Start")
+
+        .with_columns(
+            pl.when(
+                pl.col("Ende").is_null() | pl.col("Ende").gt(zeitpunkt_auswertung)
+            )
+            .then(pl.lit('Übertritt folge'))
+            .otherwise(pl.lit('Personalbewegung'))
+            .alias('Personalbewegung')
+        )
+    )
+    return (df_rollen_personalbewegung_folge,)
+
+
+@app.cell
+def _(
+    df_rollen_personalbewegung,
+    df_rollen_personalbewegung_folge,
+    df_rollen_personalbewegung_vor,
+):
     fn_ids_personalbewegung = df_rollen_personalbewegung.group_by('FEUERnetz-ID').len().filter(pl.col('len').eq(1)).select(pl.implode('FEUERnetz-ID')).to_series()
 
     df_rollen_personalbewegung_grouped_single = (
@@ -356,7 +411,7 @@ def _(df_rollen_personalbewegung):
         .group_by('FEUERnetz-ID')
         .agg(
             pl.col("Personalbewegung").first().alias('Personalbewegung'),
-            pl.col("Einheit").first().alias('Einheit Ehemals')
+            pl.col("Einheit").first().alias('Einheit Alt_'),
         )
     )
 
@@ -366,11 +421,35 @@ def _(df_rollen_personalbewegung):
         )
         .sort(['Name', 'Vorname', 'Start'])
         .group_by('FEUERnetz-ID')
-        .agg(pl.col("Einheit").first().alias('Einheit Alt'))
+        .agg(
+            pl.col("Einheit").first().alias('Einheit Alt'),
+        )
+    )
+
+    df_rollen_personalbewegung_vor_grouped =  (
+        df_rollen_personalbewegung_vor.filter(
+            pl.col('FEUERnetz-ID').is_in(fn_ids_personalbewegung)
+        )
+        .group_by('FEUERnetz-ID')
+        .agg(
+            pl.col("Einheit").last().alias('Einheit Vor')
+        )
+    )
+
+    df_rollen_personalbewegung_folge_grouped =  (
+        df_rollen_personalbewegung_folge.filter(
+            pl.col('FEUERnetz-ID').is_in(fn_ids_personalbewegung)
+        )
+        .group_by('FEUERnetz-ID')
+        .agg(
+            pl.col("Einheit").first().alias('Einheit Folge')
+        )
     )
     return (
+        df_rollen_personalbewegung_folge_grouped,
         df_rollen_personalbewegung_grouped_multiple,
         df_rollen_personalbewegung_grouped_single,
+        df_rollen_personalbewegung_vor_grouped,
     )
 
 
@@ -527,11 +606,14 @@ def _(
     df_rollen_grouped_einheit,
     df_rollen_grouped_eintritt,
     df_rollen_grouped_rolle,
+    df_rollen_personalbewegung_folge_grouped,
     df_rollen_personalbewegung_grouped_multiple,
     df_rollen_personalbewegung_grouped_single,
+    df_rollen_personalbewegung_vor_grouped,
     df_stamm,
     ehrung_land,
     ehrung_verband,
+    erster_tag_jahr,
 ):
     df_joined = (
         df_stamm
@@ -548,6 +630,8 @@ def _(
         # Personalwechsel
         .join(df_rollen_personalbewegung_grouped_single, on='FEUERnetz-ID', how="left")
         .join(df_rollen_personalbewegung_grouped_multiple, on='FEUERnetz-ID', how="left")
+        .join(df_rollen_personalbewegung_vor_grouped, on='FEUERnetz-ID', how="left")
+        .join(df_rollen_personalbewegung_folge_grouped, on='FEUERnetz-ID', how="left")
 
         # Dienstzeiten
         .join(df_rollen_grouped_dienstzeit.select(['FEUERnetz-ID', 'Dienstzeit']), on='FEUERnetz-ID', how="left")
@@ -571,6 +655,8 @@ def _(
         .join(df_quali_grouped_fuehrerschein_c1, on='FEUERnetz-ID', how="left")
         .join(df_quali_grouped_fuehrerschein_c, on='FEUERnetz-ID', how="left")
 
+    ).with_columns(pl.col("Einheit Alt_").fill_null(pl.col("Einheit Alt"))
+    ).with_columns(pl.col("Einheit Alt").fill_null(pl.col("Einheit Alt_"))
     ).with_columns([
 
         # Geschlecht anzeigen
@@ -606,10 +692,46 @@ def _(
 
         # Personalbewegung vertiefen
         pl.when(
-            pl.col('Einheit Aktuell').is_not_null(),
-            pl.col('Einheit Alt').is_not_null(),        
+            pl.col('Personalbewegung').str.contains('Jahr'),
+            pl.col('Einheit Vor').is_not_null(),
+        ).then(None).when(
+            pl.col('Personalbewegung').eq('Neuaufnahme'),
+            pl.col('Einheit Aktuell').ne(pl.col('Einheit Vor')),
+        ).then(None).when(
+            pl.col('Einheit Aktuell').str.contains('Einheit'),
+            pl.col('Einheit Vor').str.contains('Jugend') | pl.col('Einheit Alt').str.contains('Jugend'),
         ).then(
-            pl.col('Einheit Alt').str.split(by=' ').list.first().str.replace('Einheit', 'Einsatzabteilung') + pl.lit(' -> ') + pl.col('Einheit Aktuell').str.split(by=' ').list.first()
+            pl.lit('Jugendfeuerwehr -> Einsatzabteilung')
+        ).when(
+            pl.col('Einheit Folge').str.contains('Ehren'),
+            pl.col('Einheit Vor').str.contains('Einheit'),
+        ).then(
+            pl.lit('Einsatzabteilung -> Ehrenabteilung')
+        ).when(
+            pl.col('Einheit Aktuell').str.contains('Unterstützung') | pl.col('Einheit Folge').str.contains('Unterstützung'),
+            pl.col('Einheit Vor').str.contains('Einheit') | pl.col('Einheit Alt').str.contains('Einheit'),
+        ).then(
+            pl.lit('Einsatzabteilung -> Unterstützungseinheit')
+        ).when(
+            pl.col('Einheit Aktuell').str.contains('Einheit') | pl.col('Einheit Folge').str.contains('Einheit'),
+            pl.col('Einheit Vor').str.contains('Unterstützung') | pl.col('Einheit Alt').str.contains('Unterstützung'),
+        ).then(
+            pl.lit('Unterstützungseinheit -> Einsatzabteilung')
+        ).when(
+            pl.col('Einheit Aktuell').str.contains('Ehren'),
+            pl.col('Einheit Vor').str.contains('Unterstützung'),
+        ).then(
+            pl.lit('Unterstützungseinheit -> Ehrenabteilung')
+        ).when(
+            pl.col('Einheit Aktuell Start').lt(erster_tag_jahr),
+            pl.col('Personalbewegung').eq('Neuaufnahme'),
+        ).then(None).when(
+            pl.col('Einheit Aktuell').is_null(),
+            pl.col('Einheit Folge').str.contains('Ehren'),
+        ).then(
+            pl.lit('Übertritt Ehrenabteilung')
+        ).otherwise(
+            pl.col('Personalbewegung')
         ).alias('Personalbewegung'),
 
     ]).with_columns([
@@ -678,10 +800,12 @@ def _(
         (pl.col('Dienstzeit Aktiv').dt.total_days() / 365.25).cast(int).alias('Dienstzeit Aktiv Jahre'),
 
         # Mitglied in der Einsatzabteilung
-        # TODO: wird diese Info noch verwendet?
         pl.col('Abteilung').eq('Einsatzabteilung').alias('Einsatzabteilung'),
 
-    ])
+    ]).with_columns(
+        pl.col("Ortsteil").fill_null(pl.col("Einheit Alt").str.split(by=' ').list.last()),
+        pl.col("Abteilung").fill_null(pl.col("Einheit Alt").str.split(by=' ').list.first().str.replace('Einheit', 'Einsatzabteilung')),
+    ).drop('Einheit Alt_')
     return (df_joined,)
 
 
@@ -720,8 +844,6 @@ def _(datum_befoerderung, df_joined):
             pl.col('Dienstgrad Ernennung').is_null(),
         )
         .then(pl.lit('FFA / FMA'))
-
-
 
         ## Führungskräfte inkl. Lehrgang
 
@@ -914,7 +1036,7 @@ def _(df):
             # pl.col('Beförderung').is_not_null(),
             # pl.col('Einheit Alt').is_not_null(),
             # pl.col('Einheit Aktuell').is_not_null(),
-            #pl.col('Beförderung').eq('FFA / FMA'),
+            # pl.col('Beförderung').eq('FFA / FMA'),
         )
     )
     return
@@ -941,7 +1063,7 @@ def _(df):
 
 
 @app.cell
-def _(datum_befoerderung, ehrung_land, ehrung_verband):
+def _(datum_auswertung, datum_befoerderung, ehrung_land, ehrung_verband):
     def export_daten_jahresbericht(df: pl.DataFrame) -> None:
         befoerderungen = {
             'FFA / FMA': 'FMA',
@@ -984,6 +1106,26 @@ def _(datum_befoerderung, ehrung_land, ehrung_verband):
         ).write_csv(
             os.path.join(db.ORDNER_AUSGABE, f'ehrungen_{datum_befoerderung.value.year}.csv')
         )
+
+        df.filter(
+            pl.col('Personalbewegung').str.contains('-> Ehren'),
+        ).select(
+            pl.col('Nachname'),
+            pl.col('Vorname'),
+            pl.col('Ortsteil'),
+            pl.col('Dienstgrad FF'),
+            pl.col('Personalbewegung'),
+        ).write_csv(
+            os.path.join(db.ORDNER_AUSGABE, f'ehrenabteilung_{datum_auswertung.value.year}.csv')
+        )
+
+        (df.filter(pl.col('Personalbewegung').is_not_null())
+        .group_by(['Ortsteil', 'Abteilung', 'Personalbewegung'])
+        .agg(pl.col("Nachname").count())
+        .rename({"Nachname": "Anzahl"})
+        .write_csv(
+            os.path.join(db.ORDNER_AUSGABE, f'personalbewegung_{datum_auswertung.value.year}.csv')
+        ))
 
         for key_b, value_b in befoerderungen.items():
             df.filter(
@@ -1638,7 +1780,6 @@ def _(df_grafik, switch_grafik_value):
 @app.cell
 def _(df_grafik, ortsteile, switch_grafik_value):
     # TODO: Funktion üperprüfen
-
     def grafik_mitglieder_wechsel(df: pl.DataFrame, ortsteil: str, show: bool = False):
         if not switch_grafik_value: return
 
