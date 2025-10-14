@@ -1,5 +1,6 @@
 import os
 import polars as pl
+import json
 
 import database.fn_config as fn_config
 
@@ -106,6 +107,7 @@ def lese_einsatzdaten() -> pl.DataFrame:
         
     return df
 
+
 def lese_einsatz_einheiten_details() -> pl.DataFrame:
     df = pl.read_excel(os.path.join(ORDNER_EINGABE, "Einsatz - Ausrückezeiten.xlsx"))
     df = df.with_columns([
@@ -125,6 +127,32 @@ def lese_einsatz_einheiten_details() -> pl.DataFrame:
     ])
     
     return df
+
+
+def lese_wasserentnahmestellen() -> pl.DataFrame:
+  df = pl.read_csv(
+    os.path.join(ORDNER_EINGABE, 'Wasserentnahmestellen.csv'),
+    separator=';',
+    encoding="iso-8859-1",
+  )
+  df = df.with_columns(pl.col('Produktionsdatum').str.to_datetime(DATUM_FORMAT2, ambiguous='null', strict=False))
+  return df
+
+
+def lese_geodaten(gemeindeschluessel: str) -> dict:
+    # Load border of viewed municipality
+    geoJson = json.load(open(os.path.join(ORDNER_EINGABE, 'gemeinden_simplify20.geojson')))
+    for element in geoJson['features']:
+        if element['properties']['AGS'] == gemeindeschluessel:
+            return element
+
+
+def lese_poi() -> pl.DataFrame:
+    return pl.read_csv(
+        os.path.join(ORDNER_EINGABE, 'poi.csv'),
+        separator=';',
+        encoding="iso-8859-1",
+    )
 
 
 if __name__ == "__main__":
