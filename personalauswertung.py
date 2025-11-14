@@ -1,15 +1,13 @@
 import marimo
 
-__generated_with = "0.16.0"
+__generated_with = "0.17.0"
 app = marimo.App(width="medium", app_title="Personalauswertung")
 
 with app.setup:
     # Initialization code that runs before all other cells
     import os
-    import math
     import marimo as mo
     import polars as pl
-    import pandas as pd
     import datetime as dt
 
     import matplotlib.pyplot as plt
@@ -822,7 +820,7 @@ def _(datum_befoerderung, df_joined):
             pl.col('Dienstgrad Ernennung').is_null(),
             pl.col('Einheit Alt').str.contains('Jugendfeuerwehr')
         )
-        .then(pl.lit('FF / FM'))
+        .then(pl.lit('FFr / FM'))
 
         ## Bei Neuaufnahme und Mitgliedschaft von 6 Monaten -> Feuerwehrmann / -frau    
         .when(
@@ -830,20 +828,20 @@ def _(datum_befoerderung, df_joined):
             pl.col('Personalbewegung').eq('Neuaufnahme'),
             pl.col('Einheit Aktuell Start').dt.offset_by('6mo').le(datum_befoerderung.value)
         )
-        .then(pl.lit('FF / FM'))
+        .then(pl.lit('FFr / FM'))
 
         ## Anwärter und Mitgliedschaft von 6 Monaten -> Feuerwehrmann / -frau    
         .when(
             pl.col('Einheit Aktuell Start').dt.offset_by('6mo').le(datum_befoerderung.value),
             pl.col('Dienstgrad FF(lang)').str.contains('Anwärter')
         )
-        .then(pl.lit('FF / FM'))
+        .then(pl.lit('FFr / FM'))
 
         ## Wenn sonst kein Dienstgrad vergeben ist
         .when(
             pl.col('Dienstgrad Ernennung').is_null(),
         )
-        .then(pl.lit('FFA / FMA'))
+        .then(pl.lit('FFrA / FMA'))
 
         ## Führungskräfte inkl. Lehrgang
 
@@ -871,7 +869,7 @@ def _(datum_befoerderung, df_joined):
 
         ### Beförderung vom Oberfeuerwehrmann zum Brandmeister
         .when(
-            pl.col('Dienstgrad FF').is_in(["OFF", "OFM"]),
+            pl.col('Dienstgrad FF').is_in(["OFFr", "OFM"]),
             pl.col('Dienstgrad Ernennung').dt.offset_by('1y').le(datum_befoerderung.value),
             pl.col('Gruppenführer').le(datum_befoerderung.value),      
         )
@@ -879,21 +877,21 @@ def _(datum_befoerderung, df_joined):
 
         ### Beförderung zum Brandmeister
         .when(
-            pl.col('Dienstgrad FF').is_in(["HFF", "HFM", "UBM"]),
+            pl.col('Dienstgrad FF').is_in(["HFFr", "HFM", "UBM"]),
             pl.col('Gruppenführer').le(datum_befoerderung.value),      
         )
         .then(pl.lit('BM'))
 
         ### Beförderung vom Hauptfeuerwehrmann zum Unterbrandmeister
         .when(
-            pl.col('Dienstgrad FF').is_in(["HFF", "HFM"]),
+            pl.col('Dienstgrad FF').is_in(["HFFr", "HFM"]),
             pl.col('Truppführer').le(datum_befoerderung.value),
         )
         .then(pl.lit('UBM'))
 
         ### Beförderung vom Oberfeuerwehrmann zum Unterbrandmeister
         .when(
-            pl.col('Dienstgrad FF').is_in(["OFF", "OFM"]),
+            pl.col('Dienstgrad FF').is_in(["OFFr", "OFM"]),
             pl.col('Dienstgrad Ernennung').dt.offset_by('1y').le(datum_befoerderung.value),
             pl.col('Truppführer').le(datum_befoerderung.value),
         )
@@ -904,18 +902,18 @@ def _(datum_befoerderung, df_joined):
 
         ### Beförderung vom Feuerwehrmann zum Oberfeuerwehrmann
         .when(
-            pl.col('Dienstgrad FF').is_in(["FF", "FM"]),
+            pl.col('Dienstgrad FF').is_in(["FFr", "FM"]),
             pl.col('Truppmann').le(datum_befoerderung.value),
             pl.col('Dienstgrad Ernennung').dt.offset_by('2y').le(datum_befoerderung.value),        
         )
-        .then(pl.lit('OFF / OFM'))
+        .then(pl.lit('OFFr / OFM'))
 
         ### Beförderung vom Oberfeuerwehrmann zum Hauptfeuerwehrmann
         .when(
-            pl.col('Dienstgrad FF').is_in(["OFF", "OFM"]),
+            pl.col('Dienstgrad FF').is_in(["OFFr", "OFM"]),
             pl.col('Dienstgrad Ernennung').dt.offset_by('5y').le(datum_befoerderung.value),        
         )
-        .then(pl.lit('HFF / HFM'))
+        .then(pl.lit('HFFr / HFM'))
 
         ### Beförderung vom Brandmeister zum Oberbrandmeister
         .when(
@@ -977,20 +975,20 @@ def _(datum_befoerderung, df_joined):
 
         # Beförderung vom Anwärter zum Feuerwehrmann -> Beförderungsdatum entspricht Eintrittsdatum plus 6 Monate
         .when(
-            pl.col('Beförderung').eq('FF / FM'),
+            pl.col('Beförderung').eq('FFr / FM'),
             pl.col('Dienstgrad FF(lang)').str.contains('Anwärter'),
         )
         .then(pl.col('Dienstgrad Ernennung').dt.offset_by('6mo'))
 
         .when(
-            pl.col('Beförderung').eq('FF / FM'),
+            pl.col('Beförderung').eq('FFr / FM'),
             pl.col('Personalbewegung').eq('Neuaufnahme'),
         )
         .then(pl.col('Einheit Aktuell Start').dt.offset_by('6mo'))
 
         # Beförderung zum Feuerwehrmann bei Übertritt aus der Jugendfeuerwehr
         .when(
-            pl.col('Beförderung').eq('FF / FM'),
+            pl.col('Beförderung').eq('FFr / FM'),
             pl.col('Einheit Alt').str.contains('Jugendfeuerwehr'),
         )
         .then(pl.col('Geburtsdatum').dt.offset_by('18y'))
@@ -1036,7 +1034,7 @@ def _(df):
             # pl.col('Beförderung').is_not_null(),
             # pl.col('Einheit Alt').is_not_null(),
             # pl.col('Einheit Aktuell').is_not_null(),
-            # pl.col('Beförderung').eq('FFA / FMA'),
+            # pl.col('Beförderung').eq('FFrA / FMA'),
         )
     )
     return
@@ -1066,10 +1064,10 @@ def _(df):
 def _(datum_auswertung, datum_befoerderung, ehrung_land, ehrung_verband):
     def export_daten_jahresbericht(df: pl.DataFrame) -> None:
         befoerderungen = {
-            'FFA / FMA': 'FMA',
-            'FF / FM': 'FM',
-            'OFF / OFM': 'OFM',
-            'HFF / HFM': 'HFM',
+            'FFrA / FMA': 'FMA',
+            'FFr / FM': 'FM',
+            'OFFr / OFM': 'OFM',
+            'HFFr / HFM': 'HFM',
             'UBM': 'UBM',
             'BM': 'BM',
             'OBM': 'OBM',
