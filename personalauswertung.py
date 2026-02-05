@@ -71,7 +71,7 @@ def _():
 def _():
     jahr_heute = dt.datetime.now().year
     datum_auswertung = mo.ui.date(
-        value=dt.date(jahr_heute, 12, 31)
+        value=dt.date(jahr_heute-1, 12, 31)
     )
     return (datum_auswertung,)
 
@@ -142,6 +142,39 @@ def _(df_stamm):
         df_stamm.select(['FEUERnetz-ID', 'Geburtsdatum']), on='FEUERnetz-ID', how="left"
     )
     return (df_rollen,)
+
+
+@app.cell
+def _(datum_auswertung, df_rollen):
+    # Personalgesamtübersicht
+
+    data_rollen = df_rollen.filter(
+        pl.col('Start').le(datum_auswertung.value),
+        pl.col('Ende').is_null() |
+        pl.col('Ende').gt(datum_auswertung.value),
+        pl.col('Rolle').eq('Mitglied') |
+        pl.col('Rolle').eq('Zweitmitglied (Doppelmitgliedschaft)') |
+        pl.col('Rolle').eq('Mitglied (Beamter)'),
+        pl.col('Einheit').ne('Stadt Hamminkeln'),
+        pl.col('Einheit').ne('Vorgeplante überörtliche Hilfe'),
+        pl.col('Einheit').ne('Stabsstellen und Fachberater'),
+        pl.col('Einheit').ne('Funkwerkstatt'),
+        pl.col('Einheit').ne('IuK Gruppe'),
+        pl.col('Einheit').ne('Externe Feuerwehr'),
+    ).with_columns(
+        pl.col('Einheit').str.split(" ").list.first().alias('Abteilung'),
+        pl.col('Einheit').str.split(" ").list.last().alias('Ortsteil'),
+    ).with_columns(
+        pl.when(
+            pl.col('Abteilung') == "Einheit"
+        ).then(pl.lit("Einsatzabteilung")).otherwise(pl.col('Abteilung')).alias("Abteilung")
+    )
+
+    data_rollen_uni = data_rollen.sort('Start').unique('FEUERnetz-ID', keep='first')
+
+    data_rollen_uni.group_by(['Ortsteil', 'Abteilung']).agg(pl.col('FEUERnetz-ID').count()).write_csv(os.path.join(ORDNER_AUSGABE, 'personal_ges_uni_pivot.csv'))
+    data_rollen.group_by(['Ortsteil', 'Abteilung']).agg(pl.col('FEUERnetz-ID').count()).write_csv(os.path.join(ORDNER_AUSGABE, 'personal_ges_pivot.csv'))
+    return
 
 
 @app.cell
@@ -576,9 +609,15 @@ def _(df_dienstgrad, zeitpunkt_auswertung):
     df_dienstgrad_grouped = (
         df_dienstgrad
         .sort('Ernannt ab')
-        .filter(pl.col('Ernannt ab').le(zeitpunkt_auswertung))
+        .filter(
+            pl.col('Ernannt ab').le(zeitpunkt_auswertung),
+            pl.col('Urkundendatierung').le(zeitpunkt_auswertung)
+        )
         .group_by('FEUERnetz-ID')
-        .agg(pl.col('Ernannt ab').last().alias('Dienstgrad Ernennung'))
+        .agg(
+            pl.col('Ernannt ab').last().alias('Dienstgrad Ernennung'),
+            pl.col('Dienstgrad').last().alias('Dienstgrad Letzte'),
+        )
     )
     return (df_dienstgrad_grouped,)
 
@@ -808,38 +847,40 @@ def _(
 
 
 @app.cell
-def _(datum_befoerderung, df_joined):
+def _(datum_befoerderung, datum_jhv, df_joined):
     df_promo = df_joined.filter(
         pl.col('Abteilung').eq('Einsatzabteilung') | pl.col('Abteilung').eq('Unterstützungseinheit'),
-        pl.col('Rolle').str.starts_with('Mitglied')
+        pl.col('Rolle').str.starts_with('Mitglied'),
+        pl.col('Dienstgrad Letzte').is_null() |
+        pl.col('Dienstgrad Letzte').is_in(["Stadtbrandinspektor", "Stadtbrandinspektorin"]).not_()
     ).with_columns(
         #Beförderungen ermitteln
 
         ## Übertritt von der Jugendfeuerwehr in die Einsatzabteilung -> Feuerwehrmann / -frau
         pl.when(
-            pl.col('Dienstgrad Ernennung').is_null(),
+            pl.col('Dienstgrad Letzte').is_null(),
             pl.col('Einheit Alt').str.contains('Jugendfeuerwehr')
         )
         .then(pl.lit('FFr / FM'))
 
         ## Bei Neuaufnahme und Mitgliedschaft von 6 Monaten -> Feuerwehrmann / -frau    
         .when(
-            pl.col('Dienstgrad Ernennung').is_null(),
+            pl.col('Dienstgrad Letzte').is_null(),
             pl.col('Personalbewegung').eq('Neuaufnahme'),
-            pl.col('Einheit Aktuell Start').dt.offset_by('6mo').le(datum_befoerderung.value)
+            pl.col('Einheit Aktuell Start').dt.offset_by('6mo').le(datum_jhv.value)
         )
         .then(pl.lit('FFr / FM'))
 
         ## Anwärter und Mitgliedschaft von 6 Monaten -> Feuerwehrmann / -frau    
         .when(
-            pl.col('Einheit Aktuell Start').dt.offset_by('6mo').le(datum_befoerderung.value),
-            pl.col('Dienstgrad FF(lang)').str.contains('Anwärter')
+            pl.col('Einheit Aktuell Start').dt.offset_by('6mo').le(datum_jhv.value),
+            pl.col('Dienstgrad Letzte').str.contains('Anwärter')
         )
         .then(pl.lit('FFr / FM'))
 
         ## Wenn sonst kein Dienstgrad vergeben ist
         .when(
-            pl.col('Dienstgrad Ernennung').is_null(),
+            pl.col('Dienstgrad Letzte').is_null(),
         )
         .then(pl.lit('FFrA / FMA'))
 
@@ -847,7 +888,8 @@ def _(datum_befoerderung, df_joined):
 
         ### Beförderung zum Stadtbrandinspektor
         .when(
-            pl.col('Dienstgrad FF').ne("StBI"),
+            pl.col('Abteilung').eq('Einsatzabteilung'),
+            pl.col('Dienstgrad Letzte').ne("Stadtbrandinspektor"), pl.col('Dienstgrad Letzte').ne("Stadtbrandinspektorin"),
             pl.col('Stabsarbeit').le(datum_befoerderung.value),
             pl.col('Leiter einer Feuerwehr').le(datum_befoerderung.value),       
         )
@@ -855,21 +897,34 @@ def _(datum_befoerderung, df_joined):
 
         ### Beförderung zum Brandoberinspektor
         .when(
-            pl.col('Dienstgrad FF').eq("BI"),
+            pl.col('Abteilung').eq('Einsatzabteilung'),
+            pl.col('Dienstgrad Letzte').is_in([
+                "Brandinspektor", "Brandinspektorin",
+                "Brandmeister", "Brandmeisterin",
+                "Oberbrandmeister", "Oberbrandmeisterin",
+                "Hauptbrandmeister", "Hauptbrandmeisterin",
+            ]),
             pl.col('Verbandsführer').le(datum_befoerderung.value),      
         )
         .then(pl.lit('BOI'))
 
         ### Beförderung zum Brandinspektor
         .when(
-            pl.col('Dienstgrad FF').is_in(["OBM", "HBM"]),
+            pl.col('Abteilung').eq('Einsatzabteilung'),
+            pl.col('Dienstgrad Letzte').is_in([
+                "Oberbrandmeister", "Oberbrandmeisterin",
+                "Hauptbrandmeister", "Hauptbrandmeisterin",
+            ]),
+            # pl.col('Dienstgrad FF').is_in(["OBM", "HBM"]),
             pl.col('Zugführer').le(datum_befoerderung.value),      
         )
         .then(pl.lit('BI'))
 
         ### Beförderung vom Oberfeuerwehrmann zum Brandmeister
         .when(
-            pl.col('Dienstgrad FF').is_in(["OFFr", "OFM"]),
+            pl.col('Abteilung').eq('Einsatzabteilung'),
+            pl.col('Dienstgrad Letzte').is_in(["Oberfeuerwehrmann", "Oberfeuerwehrfrau"]),
+            # pl.col('Dienstgrad FF').is_in(["OFFr", "OFM"]),
             pl.col('Dienstgrad Ernennung').dt.offset_by('1y').le(datum_befoerderung.value),
             pl.col('Gruppenführer').le(datum_befoerderung.value),      
         )
@@ -877,21 +932,34 @@ def _(datum_befoerderung, df_joined):
 
         ### Beförderung zum Brandmeister
         .when(
-            pl.col('Dienstgrad FF').is_in(["HFFr", "HFM", "UBM"]),
+            pl.col('Abteilung').eq('Einsatzabteilung'),
+            pl.col('Dienstgrad Letzte').is_in([
+                "Hauptfeuerwehrmann", "Hauptfeuerwehrfrau",
+                "Unterbrandmeister", "Unterbrandmeisterin"
+            ]),
+            # pl.col('Dienstgrad FF').is_in(["HFFr", "HFM", "UBM"]),
             pl.col('Gruppenführer').le(datum_befoerderung.value),      
         )
         .then(pl.lit('BM'))
 
         ### Beförderung vom Hauptfeuerwehrmann zum Unterbrandmeister
         .when(
-            pl.col('Dienstgrad FF').is_in(["HFFr", "HFM"]),
+            pl.col('Abteilung').eq('Einsatzabteilung'),
+            pl.col('Dienstgrad Letzte').is_in([
+                "Hauptfeuerwehrmann", "Hauptfeuerwehrfrau"
+            ]),
+            # pl.col('Dienstgrad FF').is_in(["HFFr", "HFM"]),
             pl.col('Truppführer').le(datum_befoerderung.value),
         )
         .then(pl.lit('UBM'))
 
         ### Beförderung vom Oberfeuerwehrmann zum Unterbrandmeister
         .when(
-            pl.col('Dienstgrad FF').is_in(["OFFr", "OFM"]),
+            pl.col('Abteilung').eq('Einsatzabteilung'),
+            pl.col('Dienstgrad Letzte').is_in([
+                "Oberfeuerwehrmann", "Oberfeuerwehrfrau"
+            ]),
+            # pl.col('Dienstgrad FF').is_in(["OFFr", "OFM"]),
             pl.col('Dienstgrad Ernennung').dt.offset_by('1y').le(datum_befoerderung.value),
             pl.col('Truppführer').le(datum_befoerderung.value),
         )
@@ -902,7 +970,11 @@ def _(datum_befoerderung, df_joined):
 
         ### Beförderung vom Feuerwehrmann zum Oberfeuerwehrmann
         .when(
-            pl.col('Dienstgrad FF').is_in(["FFr", "FM"]),
+            pl.col('Abteilung').eq('Einsatzabteilung'),
+            pl.col('Dienstgrad Letzte').is_in([
+                "Feuerwehrmann", "Feuerwehrfrau"
+            ]),
+            # pl.col('Dienstgrad FF').is_in(["FFr", "FM"]),
             pl.col('Truppmann').le(datum_befoerderung.value),
             pl.col('Dienstgrad Ernennung').dt.offset_by('2y').le(datum_befoerderung.value),        
         )
@@ -910,13 +982,18 @@ def _(datum_befoerderung, df_joined):
 
         ### Beförderung vom Oberfeuerwehrmann zum Hauptfeuerwehrmann
         .when(
-            pl.col('Dienstgrad FF').is_in(["OFFr", "OFM"]),
+            pl.col('Abteilung').eq('Einsatzabteilung'),
+            pl.col('Dienstgrad Letzte').is_in([
+                "Oberfeuerwehrmann", "Oberfeuerwehrfrau"
+            ]),
+            # pl.col('Dienstgrad FF').is_in(["OFFr", "OFM"]),
             pl.col('Dienstgrad Ernennung').dt.offset_by('5y').le(datum_befoerderung.value),        
         )
         .then(pl.lit('HFFr / HFM'))
 
         ### Beförderung vom Brandmeister zum Oberbrandmeister
         .when(
+            pl.col('Abteilung').eq('Einsatzabteilung'),
             pl.col('Dienstgrad FF').eq('BM'),
             pl.col('Dienstgrad Ernennung').dt.offset_by('2y').le(datum_befoerderung.value),   
         )
@@ -924,7 +1001,11 @@ def _(datum_befoerderung, df_joined):
 
         ### Beförderung vom Oberbrandmeister zum Hauptbrandmeister
         .when(
-            pl.col('Dienstgrad FF').eq('OBM'),
+            pl.col('Abteilung').eq('Einsatzabteilung'),
+            pl.col('Dienstgrad Letzte').is_in([
+                "Brandmeister", "Brandmeisterin"
+            ]),
+            # pl.col('Dienstgrad FF').eq('OBM'),
             pl.col('Dienstgrad Ernennung').dt.offset_by('5y').le(datum_befoerderung.value),        
         )
         .then(pl.lit('HBM'))
@@ -934,9 +1015,13 @@ def _(datum_befoerderung, df_joined):
 
 
         # Beförderungsdatum ermitteln
+        pl.when(
+            pl.col('Beförderung').is_null(),
+        )
+        .then(None)
 
         # Beförderung zum Stadtbrandinspektor
-        pl.when(
+        .when(
             pl.col('Beförderung').eq('StBI'),
             pl.col('Leiter einer Feuerwehr').ge(datum_befoerderung.value)
         )
@@ -976,7 +1061,7 @@ def _(datum_befoerderung, df_joined):
         # Beförderung vom Anwärter zum Feuerwehrmann -> Beförderungsdatum entspricht Eintrittsdatum plus 6 Monate
         .when(
             pl.col('Beförderung').eq('FFr / FM'),
-            pl.col('Dienstgrad FF(lang)').str.contains('Anwärter'),
+            pl.col('Dienstgrad Letzte').str.contains('Anwärter'),
         )
         .then(pl.col('Dienstgrad Ernennung').dt.offset_by('6mo'))
 
@@ -1030,7 +1115,7 @@ def _(df):
             # pl.col('Abteilung').eq('Unterstützungseinheit'),
             # pl.col('Personalbewegung').eq('Neuaufnahme'),
             # pl.col('Dienstzeit').dt.total_days().gt(365),
-            # pl.col('Dienstgrad FF(lang)').str.contains('Anwärter'),
+            # pl.col('Dienstgrad Letzte').str.contains('Anwärter'),
             # pl.col('Beförderung').is_not_null(),
             # pl.col('Einheit Alt').is_not_null(),
             # pl.col('Einheit Aktuell').is_not_null(),
@@ -1081,10 +1166,12 @@ def _(datum_auswertung, datum_befoerderung, ehrung_land, ehrung_verband):
             pl.col('Rolle').is_not_null(),
             pl.col('Beförderung').is_not_null(),
         ).select(
+            pl.col('FEUERnetz-ID'),
             pl.col('Nachname'),
             pl.col('Vorname'),
             pl.col('Ortsteil'),
-            pl.col('Dienstgrad FF'),
+            pl.col('Abteilung'),
+            pl.col('Dienstgrad Letzte'),
             pl.col('Beförderung'),
             pl.col('Beförderungs Datum'),
         ).write_csv(
@@ -1095,11 +1182,16 @@ def _(datum_auswertung, datum_befoerderung, ehrung_land, ehrung_verband):
             pl.col('Rolle').is_not_null(),
             pl.col('Ehrung').is_not_null(),
         ).select(
+            pl.col('FEUERnetz-ID'),
+            pl.col('Anrede'),
             pl.col('Nachname'),
             pl.col('Vorname'),
             pl.col('Ortsteil'),
+            pl.col('Abteilung'),
             pl.col('Dienstgrad FF'),
             pl.col('Beförderung'),
+            pl.col('Geburtsdatum'),
+            pl.col('Eintritt Feuerwehr'),
             pl.col('Ehrung'),
         ).write_csv(
             os.path.join(db.ORDNER_AUSGABE, f'ehrungen_{datum_befoerderung.value.year}.csv')
@@ -1156,6 +1248,188 @@ def _(datum_auswertung, datum_befoerderung, ehrung_land, ehrung_verband):
                     os.path.join(db.ORDNER_AUSGABE, db.ORDNER_JAHRESBERICHT, f'{key_e}-{jahr}Jahre.csv')
                 )
     return (export_daten_jahresbericht,)
+
+
+@app.cell
+def _(datum_auswertung, df_quali, erster_tag_jahr):
+    df_quali_pre = df_quali.filter(
+        pl.col('Start').ge(erster_tag_jahr),
+        pl.col('Start').le(datum_auswertung.value),
+        pl.col('Kategorie').ne('Führerscheine'),
+        pl.col('Qualifikation').ne('Träger von Chemikalienschutzanzügen (CSA)'),
+        pl.col('Qualifikation').ne('Belastungsübung gem. FwDV7 - Streckengang'),
+        pl.col('Qualifikation').ne('G26.3'),
+        pl.col('Qualifikation').ne('G25 - Führerschein'),
+        pl.col('Qualifikation').ne('Unterweisung FWDv7'),
+        pl.col('Qualifikation').ne('Einsatz/Einsatzübung'),
+        pl.col('Qualifikation').ne('CSA-Übung / CSA-Einsatz'),
+        pl.col('Qualifikation').ne('Unterweisung CBRN'),
+        pl.col('Qualifikation').ne('Erste Hilfe'),
+        pl.col('Qualifikation').ne('Erweitertes Führungszeugnis'),
+        pl.col('Qualifikation').ne('Masernschutz'),
+        pl.col('Qualifikation').ne('Fahrzeugeinweisung'),
+        pl.col('Qualifikation').ne('Fahrerunterweisung'),
+    )
+    # df_quali_pre
+    return (df_quali_pre,)
+
+
+@app.cell
+def _():
+    # sorted(set(df_quali_pre.get_column('Kategorie')))
+    return
+
+
+@app.cell
+def _(
+    df_quali_fan,
+    df_quali_idf,
+    df_quali_kreis,
+    df_quali_sonst,
+    df_quali_tm,
+    df_quali_vdf,
+    summe_ausbildung,
+):
+    mo.hstack([
+        mo.vstack([
+            'Sonstige',
+            'Teilnahmen FAN',
+            'Teilnahmen VdF',
+            'Teilnahmen IdF',
+            'Teilnahmen Kreisebene',
+            'Abschluss Grundausbildung',
+            # 'Teilnahmen Grundausbildungsmodule',
+            'Summe'
+        ]),
+        mo.vstack([
+            df_quali_sonst.height,
+            df_quali_fan.height,
+            df_quali_vdf.height,
+            df_quali_idf.height,
+            df_quali_kreis.height,
+            df_quali_tm.height,
+            # df_quali_grund.height,
+            summe_ausbildung
+        ], align='end')
+    ])
+    return
+
+
+@app.cell
+def _(
+    df_quali_fan,
+    df_quali_grund,
+    df_quali_idf,
+    df_quali_kreis,
+    df_quali_pre,
+    df_quali_tm,
+    df_quali_vdf,
+):
+    df_quali_sonst = pl.concat([
+        df_quali_pre.with_row_index(),
+        df_quali_kreis.with_row_index(),
+        df_quali_fan.with_row_index(),
+        df_quali_vdf.with_row_index(),
+        df_quali_idf.with_row_index(),
+        df_quali_grund.with_row_index(),
+        df_quali_tm.with_row_index(),
+    ]).filter(pl.len().over('FEUERnetz-ID', 'Qualifikation', 'Kategorie', 'Start')==1)
+    return (df_quali_sonst,)
+
+
+@app.cell
+def _():
+    # df_quali_sonst
+    return
+
+
+@app.cell
+def _(
+    df_quali_fan,
+    df_quali_idf,
+    df_quali_kreis,
+    df_quali_sonst,
+    df_quali_tm,
+    df_quali_vdf,
+):
+    summe_ausbildung = sum([
+            # df_quali_grund.height,
+            df_quali_tm.height,
+            df_quali_kreis.height,
+            df_quali_fan.height,
+            df_quali_vdf.height,
+            df_quali_idf.height,
+            df_quali_sonst.height,
+        ])
+    return (summe_ausbildung,)
+
+
+@app.cell
+def _(df_quali_pre):
+    df_quali_grund = df_quali_pre.filter(
+        pl.col('Qualifikation').str.starts_with('TM - ')
+    )
+    return (df_quali_grund,)
+
+
+@app.cell
+def _(df_quali_pre):
+    df_quali_tm = df_quali_pre.filter(
+        pl.col('Qualifikation').eq('Truppmann')
+    )
+    return (df_quali_tm,)
+
+
+@app.cell
+def _(df_quali_pre):
+    df_quali_kreis = df_quali_pre.filter(
+        pl.col('Qualifikation').eq('Sprechfunker') |
+        pl.col('Qualifikation').eq('Maschinist Löschfahrzeuge') |
+        pl.col('Qualifikation').eq('Truppführer') |
+        pl.col('Qualifikation').eq('Technische Hilfe Wald') |
+        pl.col('Qualifikation').eq('ABC-Einsatz') |
+        pl.col('Qualifikation').eq('Atemschutztauglichkeit (AGT)') |
+        pl.col('Qualifikation').eq('Gerätewart') |
+        pl.col('Qualifikation').eq('Maschinist Drehleiter')
+    )
+    return (df_quali_kreis,)
+
+
+@app.cell
+def _(df_quali_pre):
+    # TODO: Weitere Qualifikationen ergänzen z.B. Gruppenführer
+    df_quali_idf = df_quali_pre.filter(
+        pl.col('Qualifikation').eq('Verbandsführer') |
+        pl.col('Qualifikation').eq('Ausbilder in der Feuerwehr') |
+        pl.col('Qualifikation').eq('Zugführer') |
+        pl.col('Qualifikation').eq('Verbandsführer Stabsarbeit') |
+        pl.col('Qualifikation').eq('Brandschutztechniker') |
+        pl.col('Qualifikation').eq('Führen im ABC-Einsatz (ABC II)') |
+        pl.col('Qualifikation').eq('Fortbildung IdF')
+    )
+    return (df_quali_idf,)
+
+
+@app.cell
+def _(df_quali_pre):
+    df_quali_vdf = df_quali_pre.filter(
+        pl.col('Qualifikation').eq('Fortbildung VdF')
+    )
+    return (df_quali_vdf,)
+
+
+@app.cell
+def _(df_quali_pre):
+    df_quali_fan = df_quali_pre.filter(
+        pl.col('Qualifikation').eq('Fortbildung FAN')
+    )
+    return (df_quali_fan,)
+
+
+@app.cell
+def _():
+    # sorted(set(df_quali_pre.get_column('Qualifikation')))
+    return
 
 
 @app.cell
@@ -1752,8 +2026,8 @@ def _(df_grafik, switch_grafik_value):
 
         plt.figure()
         g = sns.countplot(
-            data=df.filter(pl.col("Einheit Ehemals").is_not_null()).to_pandas(),
-            y="Einheit Ehemals",
+            data=df.filter(pl.col("Einheit Alt").is_not_null()).to_pandas(),
+            y="Einheit Alt",
             hue='Geschlecht',
             hue_order=['M', 'W'],
             palette='deep',
@@ -1785,8 +2059,9 @@ def _(df_grafik, ortsteile, switch_grafik_value):
             pl.col("Personalbewegung").str.contains('->'),
             pl.col('Ortsteil').eq(ortsteil)
         )
-        if not data.height > 0:
-            return None
+
+        # if not data.height > 0: return None
+
         plt.figure()
         g = sns.countplot(
             data=data.to_pandas(),

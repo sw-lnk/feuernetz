@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.13.6"
+__generated_with = "0.17.0"
 app = marimo.App(width="medium")
 
 with app.setup:
@@ -156,8 +156,48 @@ def _():
 
 
 @app.cell
+def _():
+    # mo.ui.dataframe(df=df_details)
+    return
+
+
+@app.cell
+def _():
+    minuten_ausruecken = mo.ui.number(start=0, value=15, label='Ausrücken [Minuten]')
+    minuten_anfahrt = mo.ui.number(start=0, value=15, label='Anfahrt [Minuten]')
+    stunden_gesamt = mo.ui.number(start=0, value=15, label='Gesamtdauer [Stunden]')
+    return minuten_anfahrt, minuten_ausruecken, stunden_gesamt
+
+
+@app.cell
+def _():
+    mo.md(r"""Filter für Einsatzzeiten.""")
+    return
+
+
+@app.cell
+def _(minuten_anfahrt, minuten_ausruecken, stunden_gesamt):
+    mo.hstack([
+        minuten_ausruecken, minuten_anfahrt, stunden_gesamt
+    ])
+    return
+
+
+@app.cell
+def _(df_details, minuten_anfahrt, minuten_ausruecken, stunden_gesamt):
+    mo.ui.dataframe(
+        df=df_details.filter(
+            pl.col('Diff. Alarm-S3 Min.').ge(minuten_ausruecken.value) |
+            pl.col('Diff. S3-S4 Min.').ge(minuten_anfahrt.value) |
+            pl.col('Gesamtdauer').ge(stunden_gesamt.value)
+        )
+    )
+    return
+
+
+@app.cell
 def _(df_details):
-    mo.ui.dataframe(df=df_details)
+    df_details.write_csv(os.path.join(db.ORDNER_AUSGABE, 'einsatzdetails.csv'), decimal_comma=True)
     return
 
 
@@ -170,7 +210,7 @@ def _(df_details, df_einsatz):
 
         df_fzg = df_fzg.with_columns(
             pl.when(pl.col('Einsatznummer').is_nan()).then(pl.lit('Ja')).otherwise(pl.lit('Nein')).alias('Stammeinheit')
-        )
+        ).sort('Fahrzeug')
 
         if kennung:
             df_fzg = df_fzg.filter(
@@ -193,7 +233,7 @@ def _(df_details, df_einsatz):
             )
 
         fig, axes = plt.subplots(1, 3)
-    
+
         sns.boxplot(
             ax=axes[0],
             data=df_fzg,
@@ -253,13 +293,13 @@ def _(df_details, df_einsatz):
             datei_name_list.append(kennung)
         if ortsteil != None:
             datei_name_list.append(*ortsteil)
-        
+
         datei_name = '_'.join(datei_name_list)
-    
+
         output_file = os.path.join(db.ORDNER_AUSGABE, db.ORDNER_AUSGABE_GRAFIK, datei_name+'.png')
         plt.savefig(output_file, bbox_inches = 'tight')
 
-    
+
         return plt.gca()
     return (ausrueckezeiten_fahrzeug,)
 
@@ -307,6 +347,20 @@ def _(df_details, df_einsatz):
 
 
 @app.cell
+def _(df_details, df_einsatz):
+    df_gwl_details = df_details.filter(
+        pl.col('Fahrzeug').str.contains('GW-L2')
+    )
+
+    df_gwl = df_einsatz.filter(
+        pl.col('Einsatznummer').is_in(df_gwl_details.select('Einsatznummer').to_series().to_list())
+    )
+
+    anzahl_gwl_einsaetze_gesamt = df_gwl.height
+    return (anzahl_gwl_einsaetze_gesamt,)
+
+
+@app.cell
 def _(anzahl_elw_einsaetze_gesamt):
     mo.md(
         rf"""
@@ -344,6 +398,18 @@ def _(anzahl_rw_einsaetze_gesamt):
 @app.cell
 def _(ausrueckezeiten_fahrzeug):
     ausrueckezeiten_fahrzeug('RW', ['Hamminkeln'])
+    return
+
+
+@app.cell
+def _(anzahl_gwl_einsaetze_gesamt):
+    mo.md(rf"""Ein 1.GW-L2 ist im Auswertezeitraum in insgesamt **{anzahl_gwl_einsaetze_gesamt}** Einsätzen eingesetzt worden.""")
+    return
+
+
+@app.cell
+def _(ausrueckezeiten_fahrzeug):
+    ausrueckezeiten_fahrzeug('GW-L2', ['Hamminkeln'])
     return
 
 

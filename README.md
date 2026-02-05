@@ -45,7 +45,7 @@ Die nachfolgenden Daten werden aus FEUERnetz als Eingabe für die weiteren Auswe
 3. Personal - Qualifikationsexport
 4. Bericht ausführen
 6. als Excel exportieren
-7. Erzeugte Datei als _Personal - Qualifiaktionsexport.xlsx_ im input-Ordner speichern
+7. Erzeugte Datei als _Personal - Qualifikationsexport.xlsx_ im input-Ordner speichern
 
 #### Beförderungshistorie
 1. Verwaltungsmodul
