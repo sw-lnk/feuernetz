@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.16.0"
+__generated_with = "0.17.0"
 app = marimo.App(width="medium")
 
 
@@ -13,11 +13,12 @@ def _():
     import pandas as pd
 
     import folium
+    from folium.plugins import MarkerCluster
 
     from database import database as db
 
     import database.fn_config as fn_config
-    return db, fn_config, folium, mo, os, pd, pl
+    return MarkerCluster, db, fn_config, folium, mo, os, pd, pl
 
 
 @app.cell
@@ -31,6 +32,19 @@ def _(db):
     df_wasser = db.lese_wasserentnahmestellen()
     list_plz = db.postleitzahl_list()
     return df_wasser, list_plz
+
+
+@app.cell
+def _(mo):
+    # Karte für Kommunalverwaltung oder Einsatzdienst
+    zwecke = ['Einsatz', 'Kommunalverwaltung']
+    zweck_input = mo.ui.dropdown(
+        options=zwecke,
+        label='Verwendungszweck',
+        value=zwecke[-1]
+    )
+    zweck_input
+    return (zweck_input,)
 
 
 @app.cell
@@ -81,8 +95,9 @@ def _(df_wasser, mo):
 
 
 @app.cell
-def _(df_ui):
+def _(df_ui, df_wasser):
     df = df_ui.value
+    df = df_wasser
     return (df,)
 
 
@@ -114,7 +129,7 @@ def _(pd):
 @app.cell
 def _(folium):
     # Karte erstellen
-    map = folium.Map(control_scale = True, zoom_start=13, max_zoom=15)
+    map = folium.Map(control_scale = True, zoom_start=13)
     return (map,)
 
 
@@ -127,48 +142,88 @@ def _(config_allgemein, data_geo, folium, map):
     return
 
 
+@app.function
+def icon_color(typ: str) -> tuple:
+    if typ == 'Zisterne':
+        icon = 'glass-water-droplet'
+        color = "beige"
+    elif typ == 'Löschwasserbrunnen':
+        icon = 'arrow-up-from-ground-water'
+        color = "green"
+    elif typ == 'Hydrant':
+        icon = 'arrow-up-from-water-pump'
+        color = "blue"
+    else:
+        icon = 'question'
+        color = "gray"
+
+    return icon, color
+
+
 @app.cell
-def _(df, folium, map, pl):
+def _(MarkerCluster, df, folium, map, pl, zweck_input):
     # Marker pro Wasserentnahmestelle setzen
     typen = sorted(set(df.get_column('Materialtyp').to_list()))
 
+    #TODO: Kennzeichnung wenn Entnahmestelle nicht einsatzbereit ist. Farblich oder FeatureSubGroup?
+    status_aus_betrieb = ['Instandhaltung notwendig', 'irreparable/defekt', 'ausgemustert']
+    status_einsatzbereit = ['einsatzbereit', 'Prüfung notwendig']
+    status_sonstige = ['unbekannt', 'auf Lager', 'in Beschaffung']
+
+    fg_defekt = folium.FeatureGroup(name='Außer Betrieb', show=False)
+
+    if zweck_input.value == 'Kommunalverwaltung':
+        fg_defekt.add_to(map)
+
     for typ in typen:
-        fg = folium.FeatureGroup(name=typ).add_to(map)
+        # fg = folium.FeatureGroup(name=typ).add_to(map)
+        fg = MarkerCluster(name=typ).add_to(map)
 
-        df_filter = df.filter(
-            pl.col('Materialtyp').eq(typ)
-        )
-
-        if typ == 'Zisterne':
-            icon = 'glass-water-droplet'
-            color = "beige"
-        elif typ == 'Löschwasserbrunnen':
-            icon = 'arrow-up-from-ground-water'
-            color = "green"
-        elif typ == 'Hydrant':
-            icon = 'arrow-up-from-water-pump'
-            color = "blue"
-        else:
-            icon = 'question'
-            color = "gray"
+        df_filter = df.filter(pl.col('Materialtyp').eq(typ))
 
         for row in df_filter.iter_rows(named=True):
             einheit_kurz = row['Ausgegeben an Einheit'].split(' ')[-1][1:5]
+            status = row['Status']
 
-            if typ in ['Zisterne', 'Löschwasserbrunnen', 'Hydrant']:
-                html = f"""
+            if typ in ['Zisterne', 'Löschwasserbrunnen']:
+                html = f'''
                     <small>{typ}</small><br>
-                    <h4>{row['Bezeichner']}</h4>
-                    <p>{row['Anschluss']}</p>
+                    <h4>{row["Bezeichner"]}</h4>
+                    <p>{row["Anschluss"]}</p>
                     <small>{einheit_kurz}</small>
                     <br>
-                    <small>Pos.: {row['Längengrad']:.6f}, {row['Breitengrad']:.5f}</small>
-                """
+                    <small>Pos.: {row["Längengrad"]:.6f}, {row["Breitengrad"]:.5f}</small>
+                    <br>
+                    <small>Status: {row["Status"]}</small>
+                    <br>
+                    <small><a href="https://maps.google.com/?q={row["Längengrad"]},{row["Breitengrad"]}" target="_blank">Google Maps</a></small>
+                    <small><a href="https://maps.apple.com/?q={row["Längengrad"]},{row["Breitengrad"]}" target="_blank">Apple Maps</a></small>
+                '''
+            elif typ in ['Hydrant']:
+                html = f'''
+                    <small>{row["Typ"]}</small><br>
+                    <h4>{row["Bezeichner"]}</h4>
+                    <p>{row["Leitungsart"]} {row["Leitungsdurchmesser"]}</p>
+                    <small>{einheit_kurz}</small>
+                    <br><small>Pos.: {row["Längengrad"]:.6f}, {row["Breitengrad"]:.5f}</small>
+                    <br><small>Status: {row["Status"]}</small>
+                    <br><small>Ext. Inventarnummer: </small>
+                    <br>
+                    <small><a href="https://maps.google.com/?q={row["Längengrad"]},{row["Breitengrad"]}" target="_blank">Google Maps</a></small>
+                    <small><a href="https://maps.apple.com/?q={row["Längengrad"]},{row["Breitengrad"]}" target="_blank">Apple Maps</a></small>
+                '''
             else:
                 html = row['Bezeichner']
-        
+
             try:
-                folium.Marker(
+                icon, color = icon_color(typ)
+
+                if status in status_aus_betrieb:
+                    color = 'black'
+                elif status in status_sonstige:
+                    color = 'light'+color
+
+                marker = folium.Marker(
                     location=[row['Längengrad'], row['Breitengrad']],
                     popup=folium.Popup(html, max_width=2048),
                     icon=folium.Icon(
@@ -176,7 +231,13 @@ def _(df, folium, map, pl):
                         prefix='fa',
                         icon=icon
                     )
-                ).add_to(fg)
+                )
+
+                if status in status_aus_betrieb:
+                    fg_defekt.add_child(marker)
+                else:
+                    fg.add_child(marker)
+
             except Exception as e:
                 print(row, e)
                 print()
@@ -208,6 +269,12 @@ def _(db, folium, map, pl):
 def _(data_geo, find_NE_SW, map):
     # Karte zentreieren
     map.fit_bounds(find_NE_SW(data_geo))
+    return
+
+
+@app.cell
+def _(folium, map):
+    folium.TileLayer('opentopomap', show=False).add_to(map)
     return
 
 
