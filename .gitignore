@@ -2,6 +2,9 @@
 input/*
 output/*
 .env
+*.pdf
+*.csv
+*.xlsx
 
 # Python-generated files
 __marimo__/
