@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.17.0"
+__generated_with = "0.21.1"
 app = marimo.App(width="medium", app_title="Personalauswertung")
 
 with app.setup:
@@ -21,35 +21,12 @@ with app.setup:
 
     import database.fn_config as fn_config
 
-
-@app.cell
-def _():
-    start = dt.datetime.now()
-    return (start,)
+    import jahresbericht
 
 
 @app.cell
 def _():
-    config_allgemein = fn_config.config_object["allgemein"]
-
-    ortsteile = [ortsteil.strip() for ortsteil in config_allgemein['ortsteile'].split(',')]
-    abteilungen = [abteilung.strip() for abteilung in config_allgemein['abteilungen'].split(',')]
-    return abteilungen, ortsteile
-
-
-@app.cell
-def _():
-    config_ehrung = fn_config.config_object["ehrungen"]
-
-    ehrung_verband = [int(verband.strip()) for verband in config_ehrung['verband'].split(',')]
-    ehrung_land = [int(land.strip()) for land in config_ehrung['land'].split(',')]
-    return ehrung_land, ehrung_verband
-
-
-@app.cell
-def _():
-    mo.md(
-        r"""
+    mo.md(r"""
     # Personalauswertung
 
     - Beförderungen
@@ -62,43 +39,55 @@ def _():
     - LKW-Führerscheine
     - Atemschutzgeräteträger
     - ABC I Absolventen
-    """
+    """)
+    return
+
+
+@app.cell
+def _(datum_auswertung, datum_befoerderung):
+    mo.md(f"""
+    Tag der Auswertung: {datum_auswertung}
+
+    Datum Beförderungen: {datum_befoerderung}
+    """)
+    return
+
+
+@app.cell
+def _(datum_jhv):
+    mo.md(rf"""
+    Datum Jahreshauptversammlung: {datum_jhv}
+    """)
+    return
+
+
+@app.cell
+def _(df):
+    mo.ui.button(
+        label='Erstelle Daten Jahresbericht',
+        on_click=lambda _: jahresbericht.export_daten_jahresbericht(df)
     )
     return
 
 
 @app.cell
 def _():
+    switch_grafik = mo.ui.switch(label = 'Erstelle Grafiken')
+    switch_grafik
+    return (switch_grafik,)
+
+
+@app.cell
+def _():
+    # Aktuelle Zeit ermitteln
+    start = dt.datetime.now()
     jahr_heute = dt.datetime.now().year
-    datum_auswertung = mo.ui.date(
-        value=dt.date(jahr_heute-1, 12, 31)
-    )
-    return (datum_auswertung,)
-
-
-@app.cell
-def _(datum_auswertung):
-    datum_befoerderung = mo.ui.date(
-        start=datum_auswertung.value,
-        value=datum_auswertung.value+dt.timedelta(days=1)
-    )
-    return (datum_befoerderung,)
+    return jahr_heute, start
 
 
 @app.cell
 def _(datum_auswertung, datum_befoerderung):
-    mo.md(
-        f"""
-    Tag der Auswertung: {datum_auswertung}
-
-    Datum Beförderungen: {datum_befoerderung}
-    """
-    )
-    return
-
-
-@app.cell
-def _(datum_auswertung, datum_befoerderung):
+    # Datumsvorschläge ermitteln
     date = datum_auswertung.value
     zeitpunkt_auswertung = dt.datetime(date.year, date.month, date.day)
     erster_tag_jahr = dt.datetime(year=zeitpunkt_auswertung.year, month=1, day=1)
@@ -112,7 +101,27 @@ def _(datum_auswertung, datum_befoerderung):
 
 
 @app.cell
+def _(jahr_heute):
+    # Datum der Auswertung abfragen
+    datum_auswertung = mo.ui.date(
+        value=dt.date(jahr_heute-1, 12, 31)
+    )
+    return (datum_auswertung,)
+
+
+@app.cell
+def _(datum_auswertung):
+    # Datum für Beförderungen abfragen
+    datum_befoerderung = mo.ui.date(
+        start=datum_auswertung.value,
+        value=datum_auswertung.value+dt.timedelta(days=1)
+    )
+    return (datum_befoerderung,)
+
+
+@app.cell
 def _(datum_auswertung, datum_jahreshauptversammlung_auswertung):
+    # Datum der Jahreshauptversammlung abfragen
     datum_jhv = mo.ui.date(
         start=datum_auswertung.value+dt.timedelta(days=1),
         value=datum_jahreshauptversammlung_auswertung.date()
@@ -121,21 +130,49 @@ def _(datum_auswertung, datum_jahreshauptversammlung_auswertung):
 
 
 @app.cell
-def _(datum_jhv):
-    mo.md(rf"""Datum Jahreshauptversammlung: {datum_jhv}""")
-    return
+def _():
+    # Ortsteile und Abteilungen laden und aufbereiten
+    config_allgemein = fn_config.config_object["allgemein"]
+
+    ortsteile = [ortsteil.strip() for ortsteil in config_allgemein['ortsteile'].split(',')]
+    abteilungen = [abteilung.strip() for abteilung in config_allgemein['abteilungen'].split(',')]
+    return abteilungen, ortsteile
 
 
 @app.cell
 def _():
+    # Daten zu Ehrungen laden und aufbereiten
+    config_ehrung = fn_config.config_object["ehrungen"]
+
+    ehrung_verband = [int(verband.strip()) for verband in config_ehrung['verband'].split(',')]
+    ehrung_land = [int(land.strip()) for land in config_ehrung['land'].split(',')]
+    return ehrung_land, ehrung_verband
+
+
+@app.cell
+def _():
+    # Stammdaten einlesen
     df_stamm = db.lese_stammdaten()
+    return (df_stamm,)
+
+
+@app.cell
+def _():
+    # Dienstgrade einlesen
     df_dienstgrad = db.lese_dienstgrade()
+    return (df_dienstgrad,)
+
+
+@app.cell
+def _():
+    # Qualifikationen einlesen
     df_quali = db.lese_qualifikationen()
-    return df_dienstgrad, df_quali, df_stamm
+    return (df_quali,)
 
 
 @app.cell
 def _(df_stamm):
+    # Rollen und Funktionen einlesen
     df_rollen = db.lese_rollen()
 
     df_rollen = df_rollen.join(
@@ -148,6 +185,8 @@ def _(df_stamm):
 def _(datum_auswertung, df_rollen):
     # Personalgesamtübersicht
 
+    # Rollen und Funktionen filtern
+    # Abteilung und Ortsteil trennen
     data_rollen = df_rollen.filter(
         pl.col('Start').le(datum_auswertung.value),
         pl.col('Ende').is_null() |
@@ -170,8 +209,10 @@ def _(datum_auswertung, df_rollen):
         ).then(pl.lit("Einsatzabteilung")).otherwise(pl.col('Abteilung')).alias("Abteilung")
     )
 
+    # Daten sortieren
     data_rollen_uni = data_rollen.sort('Start').unique('FEUERnetz-ID', keep='first')
 
+    # Daten als .csv exportieren
     data_rollen_uni.group_by(['Ortsteil', 'Abteilung']).agg(pl.col('FEUERnetz-ID').count()).write_csv(os.path.join(ORDNER_AUSGABE, 'personal_ges_uni_pivot.csv'))
     data_rollen.group_by(['Ortsteil', 'Abteilung']).agg(pl.col('FEUERnetz-ID').count()).write_csv(os.path.join(ORDNER_AUSGABE, 'personal_ges_pivot.csv'))
     return
@@ -179,6 +220,7 @@ def _(datum_auswertung, df_rollen):
 
 @app.cell
 def _(df_rollen, zeitpunkt_auswertung):
+    # Rollen Detail-Filter und nach FEUERnetz-ID gruppieren, Fokus Rollen und Funktionen
     df_rollen_grouped_rolle = (
         df_rollen
         .sort(by='Start')
@@ -196,6 +238,7 @@ def _(df_rollen, zeitpunkt_auswertung):
 
 @app.cell
 def _(df_rollen, zeitpunkt_auswertung):
+    # Rollen Detail-Filter und nach FEUERnetz-ID gruppieren, Fokus Einheiten
     df_rollen_grouped_einheit = (
         df_rollen
         .sort(by='Start')
@@ -223,6 +266,7 @@ def _(df_rollen, zeitpunkt_auswertung):
 
 @app.cell
 def _(df_rollen):
+    # Rollen Detail-Filter und nach FEUERnetz-ID gruppieren, Fokus Eintrittsdatum
     df_rollen_grouped_eintritt = (
         df_rollen
         .sort(by='Start')
@@ -234,6 +278,7 @@ def _(df_rollen):
 
 @app.cell
 def _(df_rollen, zeitpunkt_auswertung):
+    # Rollen Detail-Filter und nach FEUERnetz-ID gruppieren, Fokus Dienstzeit allg.
     df_rollen_grouped_dienstzeit = (
         df_rollen
         .sort(by='Start')
@@ -264,6 +309,7 @@ def _(df_rollen, zeitpunkt_auswertung):
 
 @app.cell
 def _(df_rollen, zeitpunkt_auswertung):
+    # Rollen Detail-Filter und nach FEUERnetz-ID gruppieren, Fokus Einheiten Aktiv
     df_rollen_grouped_dienstzeit_aktiv = (
         df_rollen
         .sort(by='Start')
@@ -337,6 +383,7 @@ def _(df_rollen, zeitpunkt_auswertung):
 
 @app.cell
 def _(df_rollen, erster_tag_jahr, zeitpunkt_auswertung):
+    # Rollen Detail-Filter und nach FEUERnetz-ID gruppieren, Fokus Personalbewegung
     df_rollen_personalbewegung = (
         df_rollen.filter(
             pl.col("Rolle").str.to_lowercase().str.contains("mitglied"),
@@ -379,6 +426,7 @@ def _(df_rollen, erster_tag_jahr, zeitpunkt_auswertung):
 
 @app.cell
 def _(df_rollen, erster_tag_jahr, zeitpunkt_auswertung):
+    # Rollen Detail-Filter und nach FEUERnetz-ID gruppieren, Fokus Personalbewegung vor Wechsel oder Austritt
     df_rollen_personalbewegung_vor = (
         df_rollen.filter(
             pl.col("Rolle").str.to_lowercase().str.contains("mitglied"),
@@ -404,6 +452,7 @@ def _(df_rollen, erster_tag_jahr, zeitpunkt_auswertung):
 
 @app.cell
 def _(df_rollen, zeitpunkt_auswertung):
+    # Rollen Detail-Filter und nach FEUERnetz-ID gruppieren, Fokus Personalbewegung nach Wechsel oder Austritt
     df_rollen_personalbewegung_folge = (
         df_rollen.filter(
             pl.col("Rolle").str.to_lowercase().str.contains("mitglied"),
@@ -433,6 +482,7 @@ def _(
     df_rollen_personalbewegung_folge,
     df_rollen_personalbewegung_vor,
 ):
+    # Personalbewegungen auswerten
     fn_ids_personalbewegung = df_rollen_personalbewegung.group_by('FEUERnetz-ID').len().filter(pl.col('len').eq(1)).select(pl.implode('FEUERnetz-ID')).to_series()
 
     df_rollen_personalbewegung_grouped_single = (
@@ -486,6 +536,7 @@ def _(
 
 @app.cell
 def _(df_quali):
+    # Qualifikationen filtern und nach FEUERnetz-ID gruppieren: Truppmann / Grundausbildung
     df_quali_grouped_grundasubildung = (
         df_quali
         .sort(by='Start')
@@ -493,7 +544,12 @@ def _(df_quali):
         .group_by('FEUERnetz-ID')
         .agg(pl.col("Start").first().alias('Truppmann'))
     )
+    return (df_quali_grouped_grundasubildung,)
 
+
+@app.cell
+def _(df_quali):
+    # Qualifikationen filtern und nach FEUERnetz-ID gruppieren: Truppführer
     df_quali_grouped_truppfuehrer = (
         df_quali
         .sort(by='Start')
@@ -501,7 +557,12 @@ def _(df_quali):
         .group_by('FEUERnetz-ID')
         .agg(pl.col("Start").first().alias('Truppführer'))
     )
+    return (df_quali_grouped_truppfuehrer,)
 
+
+@app.cell
+def _(df_quali):
+    # Qualifikationen filtern und nach FEUERnetz-ID gruppieren: Gruppenführer
     df_quali_grouped_gruppenfuehrer = (
         df_quali
         .sort(by='Start')
@@ -509,7 +570,12 @@ def _(df_quali):
         .group_by('FEUERnetz-ID')
         .agg(pl.col("Start").first().alias('Gruppenführer'))
     )
+    return (df_quali_grouped_gruppenfuehrer,)
 
+
+@app.cell
+def _(df_quali):
+    # Qualifikationen filtern und nach FEUERnetz-ID gruppieren: Zugführer
     df_quali_grouped_zugfuehrer = (
         df_quali
         .sort(by='Start')
@@ -517,7 +583,12 @@ def _(df_quali):
         .group_by('FEUERnetz-ID')
         .agg(pl.col("Start").first().alias('Zugführer'))
     )
+    return (df_quali_grouped_zugfuehrer,)
 
+
+@app.cell
+def _(df_quali):
+    # Qualifikationen filtern und nach FEUERnetz-ID gruppieren: Verbandsführer
     df_quali_grouped_verbandsfuehrer = (
         df_quali
         .sort(by='Start')
@@ -525,7 +596,12 @@ def _(df_quali):
         .group_by('FEUERnetz-ID')
         .agg(pl.col("Start").first().alias('Verbandsführer'))
     )
+    return (df_quali_grouped_verbandsfuehrer,)
 
+
+@app.cell
+def _(df_quali):
+    # Qualifikationen filtern und nach FEUERnetz-ID gruppieren: Stabsarbeit
     df_quali_grouped_stabsarbeit = (
         df_quali
         .sort(by='Start')
@@ -533,7 +609,12 @@ def _(df_quali):
         .group_by('FEUERnetz-ID')
         .agg(pl.col("Start").first().alias('Stabsarbeit'))
     )
+    return (df_quali_grouped_stabsarbeit,)
 
+
+@app.cell
+def _(df_quali):
+    # Qualifikationen filtern und nach FEUERnetz-ID gruppieren: Leiter einer Feuerwehr
     df_quali_grouped_ldf = (
         df_quali
         .sort(by='Start')
@@ -541,19 +622,12 @@ def _(df_quali):
         .group_by('FEUERnetz-ID')
         .agg(pl.col("Start").first().alias('Leiter einer Feuerwehr'))
     )
-    return (
-        df_quali_grouped_grundasubildung,
-        df_quali_grouped_gruppenfuehrer,
-        df_quali_grouped_ldf,
-        df_quali_grouped_stabsarbeit,
-        df_quali_grouped_truppfuehrer,
-        df_quali_grouped_verbandsfuehrer,
-        df_quali_grouped_zugfuehrer,
-    )
+    return (df_quali_grouped_ldf,)
 
 
 @app.cell
 def _(df_quali):
+    # Qualifikationen filtern und nach FEUERnetz-ID gruppieren: Atemschutzgeräteträger
     df_quali_grouped_atemschutz = (
         df_quali
         .sort(by='Start')
@@ -561,7 +635,12 @@ def _(df_quali):
         .group_by('FEUERnetz-ID')
         .agg(pl.col("Start").first().alias('Atemschutzgeräteträger'))
     )
+    return (df_quali_grouped_atemschutz,)
 
+
+@app.cell
+def _(df_quali):
+    # Qualifikationen filtern und nach FEUERnetz-ID gruppieren: CSA-Träger
     df_quali_grouped_csa = (
         df_quali
         .sort(by='Start')
@@ -569,7 +648,12 @@ def _(df_quali):
         .group_by('FEUERnetz-ID')
         .agg(pl.col("Start").first().alias('Chemikalienschutzanzug'))
     )
+    return (df_quali_grouped_csa,)
 
+
+@app.cell
+def _(df_quali):
+    # Qualifikationen filtern und nach FEUERnetz-ID gruppieren: Gültige G26.3
     df_quali_grouped_g26 = (
         df_quali
         .sort(by='Start')
@@ -577,15 +661,12 @@ def _(df_quali):
         .group_by('FEUERnetz-ID')
         .agg(pl.col("Ende").last().alias('G26.3'))
     )
-    return (
-        df_quali_grouped_atemschutz,
-        df_quali_grouped_csa,
-        df_quali_grouped_g26,
-    )
+    return (df_quali_grouped_g26,)
 
 
 @app.cell
 def _(df_quali):
+    # Qualifikationen filtern und nach FEUERnetz-ID gruppieren: Führerschein Klasse C1 und C1E
     df_quali_grouped_fuehrerschein_c1 = (
         df_quali
         .sort(by='Start')
@@ -593,7 +674,12 @@ def _(df_quali):
         .group_by('FEUERnetz-ID')
         .agg(pl.col("Start").first().alias('Führerschein C1'))
     )
+    return (df_quali_grouped_fuehrerschein_c1,)
 
+
+@app.cell
+def _(df_quali):
+    # Qualifikationen filtern und nach FEUERnetz-ID gruppieren: Führerschein Klasse C und CE
     df_quali_grouped_fuehrerschein_c = (
         df_quali
         .sort(by='Start')
@@ -601,11 +687,12 @@ def _(df_quali):
         .group_by('FEUERnetz-ID')
         .agg(pl.col("Start").first().alias('Führerschein C'))
     )
-    return df_quali_grouped_fuehrerschein_c, df_quali_grouped_fuehrerschein_c1
+    return (df_quali_grouped_fuehrerschein_c,)
 
 
 @app.cell
 def _(df_dienstgrad, zeitpunkt_auswertung):
+    # Dienstgrade filtern und nach FEUERnetz-ID gruppieren: Ernennungs- / Beförderungsdatum
     df_dienstgrad_grouped = (
         df_dienstgrad
         .sort('Ernannt ab')
@@ -652,6 +739,7 @@ def _(
     ehrung_verband,
     erster_tag_jahr,
 ):
+    # Gruppierte Daten mit Stammdaten zusammenführen
     df_joined = (
         df_stamm
         # Aktuelle Einheit
@@ -692,8 +780,8 @@ def _(
         .join(df_quali_grouped_fuehrerschein_c1, on='FEUERnetz-ID', how="left")
         .join(df_quali_grouped_fuehrerschein_c, on='FEUERnetz-ID', how="left")
 
-    ).with_columns(pl.col("Einheit Alt_").fill_null(pl.col("Einheit Alt"))
-    ).with_columns(pl.col("Einheit Alt").fill_null(pl.col("Einheit Alt_"))
+    ).with_columns(pl.col("Einheit Alt_").fill_null(pl.col("Einheit Alt")) # Ehemalige Abteilung verarbeiten
+    ).with_columns(pl.col("Einheit Alt").fill_null(pl.col("Einheit Alt_")) # Ehemalige Abteilung verarbeiten
     ).with_columns([
 
         # Geschlecht anzeigen
@@ -840,22 +928,24 @@ def _(
         pl.col('Abteilung').eq('Einsatzabteilung').alias('Einsatzabteilung'),
 
     ]).with_columns(
+        # Ortsteil ermitteln
         pl.col("Ortsteil").fill_null(pl.col("Einheit Alt").str.split(by=' ').list.last()),
+
+        # Organisatorische Abteilung ermitteln
         pl.col("Abteilung").fill_null(pl.col("Einheit Alt").str.split(by=' ').list.first().str.replace('Einheit', 'Einsatzabteilung')),
-    ).drop('Einheit Alt_')
+    ).drop('Einheit Alt_') # Spalte entfernen
     return (df_joined,)
 
 
 @app.cell
 def _(datum_befoerderung, datum_jhv, df_joined):
+    #Beförderungen ermitteln
     df_promo = df_joined.filter(
         pl.col('Abteilung').eq('Einsatzabteilung') | pl.col('Abteilung').eq('Unterstützungseinheit'),
         pl.col('Rolle').str.starts_with('Mitglied'),
         pl.col('Dienstgrad Letzte').is_null() |
         pl.col('Dienstgrad Letzte').is_in(["Stadtbrandinspektor", "Stadtbrandinspektorin"]).not_()
     ).with_columns(
-        #Beförderungen ermitteln
-
         ## Übertritt von der Jugendfeuerwehr in die Einsatzabteilung -> Feuerwehrmann / -frau
         pl.when(
             pl.col('Dienstgrad Letzte').is_null(),
@@ -1013,7 +1103,6 @@ def _(datum_befoerderung, datum_jhv, df_joined):
         .alias('Beförderung')
     ).with_columns(
 
-
         # Beförderungsdatum ermitteln
         pl.when(
             pl.col('Beförderung').is_null(),
@@ -1093,6 +1182,7 @@ def _(datum_befoerderung, datum_jhv, df_joined):
 
 @app.cell
 def _(df_joined, df_promo):
+    # Ermittelte Daten in Arbeitstabelle zusammenfassen
     df = df_joined.join(df_promo['FEUERnetz-ID', 'Beförderung', 'Beförderungs Datum'], on='FEUERnetz-ID', how="left")
     return (df,)
 
@@ -1105,6 +1195,8 @@ def _():
 
 @app.cell
 def _(df):
+    # Grafische Ausgabe der ermittelten Daten
+    # Filterbeispiele auskommentiert
     mo.ui.dataframe(
         df=df.filter(
             # pl.col('Vorname').eq('Max'),
@@ -1127,12 +1219,15 @@ def _(df):
 
 @app.cell
 def _(ende, start):
-    mo.md(rf"""Dauer für Berechnung der Daten: {(ende-start).total_seconds():.2f} Sekunden""")
+    mo.md(rf"""
+    Dauer für Berechnung der Daten: {(ende-start).total_seconds():.2f} Sekunden
+    """)
     return
 
 
 @app.cell
 def _(df):
+    # Personaldaten aller aktuellen Mitglieder ausgeben
     df.filter(
         pl.col('Rolle').is_not_null() | pl.col('Personalbewegung').is_not_null()
     ).with_columns(
@@ -1146,112 +1241,8 @@ def _(df):
 
 
 @app.cell
-def _(datum_auswertung, datum_befoerderung, ehrung_land, ehrung_verband):
-    def export_daten_jahresbericht(df: pl.DataFrame) -> None:
-        befoerderungen = {
-            'FFrA / FMA': 'FMA',
-            'FFr / FM': 'FM',
-            'OFFr / OFM': 'OFM',
-            'HFFr / HFM': 'HFM',
-            'UBM': 'UBM',
-            'BM': 'BM',
-            'OBM': 'OBM',
-            'HBM': 'HBM',
-            'BI': 'BI',
-            'BOI': 'BOI',
-            'StBI': 'StBI',
-        }
-
-        df.filter(
-            pl.col('Rolle').is_not_null(),
-            pl.col('Beförderung').is_not_null(),
-        ).select(
-            pl.col('FEUERnetz-ID'),
-            pl.col('Nachname'),
-            pl.col('Vorname'),
-            pl.col('Ortsteil'),
-            pl.col('Abteilung'),
-            pl.col('Dienstgrad Letzte'),
-            pl.col('Beförderung'),
-            pl.col('Beförderungs Datum'),
-        ).write_csv(
-            os.path.join(db.ORDNER_AUSGABE, f'befoerderungen_{datum_befoerderung.value.year}.csv')
-        )
-
-        df.filter(
-            pl.col('Rolle').is_not_null(),
-            pl.col('Ehrung').is_not_null(),
-        ).select(
-            pl.col('FEUERnetz-ID'),
-            pl.col('Anrede'),
-            pl.col('Nachname'),
-            pl.col('Vorname'),
-            pl.col('Ortsteil'),
-            pl.col('Abteilung'),
-            pl.col('Dienstgrad FF'),
-            pl.col('Beförderung'),
-            pl.col('Geburtsdatum'),
-            pl.col('Eintritt Feuerwehr'),
-            pl.col('Ehrung'),
-        ).write_csv(
-            os.path.join(db.ORDNER_AUSGABE, f'ehrungen_{datum_befoerderung.value.year}.csv')
-        )
-
-        df.filter(
-            pl.col('Personalbewegung').str.contains('-> Ehren'),
-        ).select(
-            pl.col('Nachname'),
-            pl.col('Vorname'),
-            pl.col('Ortsteil'),
-            pl.col('Dienstgrad FF'),
-            pl.col('Personalbewegung'),
-        ).write_csv(
-            os.path.join(db.ORDNER_AUSGABE, f'ehrenabteilung_{datum_auswertung.value.year}.csv')
-        )
-
-        (df.filter(pl.col('Personalbewegung').is_not_null())
-        .group_by(['Ortsteil', 'Abteilung', 'Personalbewegung'])
-        .agg(pl.col("Nachname").count())
-        .rename({"Nachname": "Anzahl"})
-        .write_csv(
-            os.path.join(db.ORDNER_AUSGABE, f'personalbewegung_{datum_auswertung.value.year}.csv')
-        ))
-
-        for key_b, value_b in befoerderungen.items():
-            df.filter(
-                pl.col('Rolle').is_not_null(),
-                pl.col('Beförderung').is_not_null(),
-                pl.col('Beförderung').eq(key_b)
-            ).select(
-                pl.col('Nachname'),
-                pl.col('Vorname'),
-                pl.col('Ortsteil'),
-            ).write_csv(
-                os.path.join(db.ORDNER_AUSGABE, db.ORDNER_JAHRESBERICHT, f'{value_b}.csv')
-            )
-
-        ehrungen = {
-            'Verband': ehrung_verband,
-            'Land': ehrung_land,
-        }
-
-        for key_e, value_e in ehrungen.items():
-            for jahr in value_e:
-                df.filter(
-                    pl.col('Rolle').is_not_null(),
-                    pl.col('Ehrung').eq(f'{key_e} - {jahr} Jahre')
-                ).select(
-                    pl.col('Nachname'),
-                    pl.col('Vorname'),
-                    pl.col('Ortsteil')
-                ).write_csv(
-                    os.path.join(db.ORDNER_AUSGABE, db.ORDNER_JAHRESBERICHT, f'{key_e}-{jahr}Jahre.csv')
-                )
-    return (export_daten_jahresbericht,)
-
-
-@app.cell
 def _(datum_auswertung, df_quali, erster_tag_jahr):
+    # Allgemeine Qualifikationen herausfiltern
     df_quali_pre = df_quali.filter(
         pl.col('Start').ge(erster_tag_jahr),
         pl.col('Start').le(datum_auswertung.value),
@@ -1270,7 +1261,6 @@ def _(datum_auswertung, df_quali, erster_tag_jahr):
         pl.col('Qualifikation').ne('Fahrzeugeinweisung'),
         pl.col('Qualifikation').ne('Fahrerunterweisung'),
     )
-    # df_quali_pre
     return (df_quali_pre,)
 
 
@@ -1290,6 +1280,7 @@ def _(
     df_quali_vdf,
     summe_ausbildung,
 ):
+    # Teilnahmedaten anzeigen
     mo.hstack([
         mo.vstack([
             'Sonstige',
@@ -1338,8 +1329,8 @@ def _(
 
 
 @app.cell
-def _():
-    # df_quali_sonst
+def _(df_quali_sonst):
+    df_quali_sonst
     return
 
 
@@ -1352,6 +1343,7 @@ def _(
     df_quali_tm,
     df_quali_vdf,
 ):
+    # Gesamtanzahl der Fortbildungen
     summe_ausbildung = sum([
             # df_quali_grund.height,
             df_quali_tm.height,
@@ -1366,6 +1358,7 @@ def _(
 
 @app.cell
 def _(df_quali_pre):
+    # Teilnahmen an Grundausbildungsmodulen
     df_quali_grund = df_quali_pre.filter(
         pl.col('Qualifikation').str.starts_with('TM - ')
     )
@@ -1374,6 +1367,7 @@ def _(df_quali_pre):
 
 @app.cell
 def _(df_quali_pre):
+    # Abschluss der Grundasubildung
     df_quali_tm = df_quali_pre.filter(
         pl.col('Qualifikation').eq('Truppmann')
     )
@@ -1382,6 +1376,7 @@ def _(df_quali_pre):
 
 @app.cell
 def _(df_quali_pre):
+    # Veranstaltungen auf Kreisebene
     df_quali_kreis = df_quali_pre.filter(
         pl.col('Qualifikation').eq('Sprechfunker') |
         pl.col('Qualifikation').eq('Maschinist Löschfahrzeuge') |
@@ -1397,6 +1392,7 @@ def _(df_quali_pre):
 
 @app.cell
 def _(df_quali_pre):
+    # Veranstaltungen am IdF
     # TODO: Weitere Qualifikationen ergänzen z.B. Gruppenführer
     df_quali_idf = df_quali_pre.filter(
         pl.col('Qualifikation').eq('Verbandsführer') |
@@ -1412,6 +1408,7 @@ def _(df_quali_pre):
 
 @app.cell
 def _(df_quali_pre):
+    # Veranstaltungen beim VdF NRW
     df_quali_vdf = df_quali_pre.filter(
         pl.col('Qualifikation').eq('Fortbildung VdF')
     )
@@ -1420,6 +1417,7 @@ def _(df_quali_pre):
 
 @app.cell
 def _(df_quali_pre):
+    # Veranstaltungen an der FAN
     df_quali_fan = df_quali_pre.filter(
         pl.col('Qualifikation').eq('Fortbildung FAN')
     )
@@ -1433,29 +1431,21 @@ def _():
 
 
 @app.cell
-def _(df, export_daten_jahresbericht):
-    mo.ui.button(
-        label='Erstelle Daten Jahresbericht',
-        on_click=lambda _: export_daten_jahresbericht(df)
-    )
-    return
-
-
-@app.cell
-def _():
-    switch_grafik = mo.ui.switch(label = 'Erstelle Grafiken')
-    switch_grafik
-    return (switch_grafik,)
-
-
-@app.cell
 def _(switch_grafik):
+    # Wert vom Grafikschalter auslesen
     switch_grafik_value = switch_grafik.value
     return (switch_grafik_value,)
 
 
 @app.cell
+def _(switch_grafik_value):
+    mo.stop(not switch_grafik_value, mo.md("**Grafik Schalter aktivieren um Grafiken anzuzeigen.**"))
+    return
+
+
+@app.cell
 def _(df, zeitpunkt_auswertung):
+    # Daten für Grafiken vorfiltern
     df_grafik = df.filter(
         pl.col('Rolle').is_not_null()
     ).with_columns(
@@ -1468,10 +1458,10 @@ def _(df, zeitpunkt_auswertung):
 
 
 @app.cell
-def _(df, switch_grafik_value):
-    def grafik_mitglieder_alter_box(df: pl.DataFrame, show: bool = False) -> plt.gca:
-        if not switch_grafik_value: return
-
+def _(df):
+    # Altersverteilung allgemein als Histogramm
+    def grafik_mitglieder_alter_box(df: pl.DataFrame) -> plt.gca:
+    
         plt.figure()
         g = sns.histplot(
             df.to_pandas(),
@@ -1500,15 +1490,15 @@ def _(df, switch_grafik_value):
         plt.tight_layout()
         return plt.gca()
 
-    grafik_mitglieder_alter_box(df, switch_grafik_value)
+    grafik_mitglieder_alter_box(df)
     return
 
 
 @app.cell
-def _(df_grafik, switch_grafik_value):
+def _(df_grafik):
+    # Altersverteilung allgemein getrennt nach männlich und weiblich als Histogramm
     def grafik_mitglieder_alter(df: pl.DataFrame, show: bool = False) -> plt.gca:
-        if not switch_grafik_value: return
-
+    
         plt.figure()
         g = sns.displot(
             data=df.to_pandas(),
@@ -1538,15 +1528,15 @@ def _(df_grafik, switch_grafik_value):
         plt.tight_layout()
         return plt.gca()
 
-    grafik_mitglieder_alter(df_grafik, switch_grafik_value)
+    grafik_mitglieder_alter(df_grafik)
     return
 
 
 @app.cell
-def _(abteilungen, df_grafik, switch_grafik_value):
+def _(abteilungen, df_grafik):
+    # Altersverteilung allgemein getrennt nach männlich und weiblich und nach Abteilung als Box-Plot
     def grafik_mitglieder_alter_box_orga(df: pl.DataFrame, show: bool = False) -> plt.gca:
-        if not switch_grafik_value: return
-
+    
         plt.figure()
         g = sns.boxplot(
             data=df.to_pandas(),
@@ -1576,15 +1566,15 @@ def _(abteilungen, df_grafik, switch_grafik_value):
         plt.tight_layout()
         return plt.gca()
 
-    grafik_mitglieder_alter_box_orga(df_grafik, switch_grafik_value)
+    grafik_mitglieder_alter_box_orga(df_grafik)
     return
 
 
 @app.cell
-def _(df_grafik, ortsteile, switch_grafik_value):
+def _(df_grafik, ortsteile):
+    # Altersverteilung allgemein getrennt nach männlich und weiblich und nach Ortsteil als Box-Plot
     def grafik_mitlgieder_einheit(df: pl.DataFrame, show: bool = False) -> plt.gca:
-        if not switch_grafik_value: return
-
+    
         plt.figure()
         g = sns.boxplot(
             data=df.sort(by='Ortsteil').to_pandas(),
@@ -1612,14 +1602,14 @@ def _(df_grafik, ortsteile, switch_grafik_value):
         plt.tight_layout()
         return plt.gca()
 
-    grafik_mitlgieder_einheit(df_grafik, switch_grafik_value)
+    grafik_mitlgieder_einheit(df_grafik)
     return
 
 
 @app.cell
 def _(df_grafik, ortsteile, switch_grafik_value):
-    def grafik_einheit_fuehrungskraefte(df: pl.DataFrame, show: bool = False) -> plt.gca:
-        if not switch_grafik_value: return
+    # Altersverteilung Führungskräfte getrennt nach männlich und weiblich und nach Abteilung als Box-Plot
+    def grafik_einheit_fuehrungskraefte(df: pl.DataFrame, show: bool = False) -> plt.gca:    
 
         fig = plt.figure()
         g = sns.boxplot(
@@ -1657,8 +1647,8 @@ def _(df_grafik, ortsteile, switch_grafik_value):
 
 @app.cell
 def _(abteilungen, df_grafik, ortsteile, switch_grafik_value):
-    def grafik_mitglieder_einheit_detail(df: pl.DataFrame, ortsteil: str, show: bool = False):
-        if not switch_grafik_value: return
+    # Altersverteilung je Einheit getrennt nach männlich und weiblich als Histogramm
+    def grafik_mitglieder_einheit_detail(df: pl.DataFrame, ortsteil: str, show: bool = False):    
 
         plt.figure()
         g = sns.displot(
@@ -1710,8 +1700,8 @@ def _(abteilungen, df_grafik, ortsteile, switch_grafik_value):
 
 @app.cell
 def _(df_grafik, switch_grafik_value):
-    def grafik_mitglieder_jufw_kifw(df: pl.DataFrame, show: bool = False):
-        if not switch_grafik_value: return
+    # Altersverteilung in Kinder- und Jugendfeuerwehr getrennt nach männlich und weiblich als Histogramm
+    def grafik_mitglieder_jufw_kifw(df: pl.DataFrame, show: bool = False):    
 
         plt.figure()
         g = sns.displot(
@@ -1746,8 +1736,8 @@ def _(df_grafik, switch_grafik_value):
 
 @app.cell
 def _(df_grafik, ortsteile, switch_grafik_value):
-    def grafik_agt_einheit(df: pl.DataFrame, show: bool = False):
-        if not switch_grafik_value: return
+    # Anzahl Atemschutzgeräteträger getrennt nach Tauglichkeit (G26.3) als Balkendiagramm
+    def grafik_agt_einheit(df: pl.DataFrame, show: bool = False):    
 
         plt.figure()
         g = sns.countplot(
@@ -1786,8 +1776,8 @@ def _(df_grafik, ortsteile, switch_grafik_value):
 
 @app.cell
 def _(df_grafik, switch_grafik_value):
-    def grafik_agt_alter(df: pl.DataFrame, show: bool = False):
-        if not switch_grafik_value: return
+    # Übersicht Atemschutzgeräteträger getrennt nach Tauglichkeit (G26.3) als Histogramm
+    def grafik_agt_alter(df: pl.DataFrame, show: bool = False):    
 
         plt.figure()
         g = sns.histplot(
@@ -1828,8 +1818,8 @@ def _(df_grafik, switch_grafik_value):
 
 @app.cell
 def _(df_grafik, ortsteile, switch_grafik_value):
-    def grafik_csa_einheit(df: pl.DataFrame, show: bool = False):
-        if not switch_grafik_value: return
+    # Anzahl CSA-Träger getrennt nach Tauglichkeit (G26.3) als Balkendiagramm
+    def grafik_csa_einheit(df: pl.DataFrame, show: bool = False):    
 
         plt.figure()
         g = sns.countplot(
@@ -1867,8 +1857,8 @@ def _(df_grafik, ortsteile, switch_grafik_value):
 
 @app.cell
 def _(df_grafik, switch_grafik_value):
-    def grafik_csa_alter(df: pl.DataFrame, show: bool = False):
-        if not switch_grafik_value: return
+    # Übersicht CSA-Träger getrennt nach Tauglichkeit (G26.3) als Histogramm
+    def grafik_csa_alter(df: pl.DataFrame, show: bool = False):    
 
         plt.figure()
         g = sns.histplot(
@@ -1909,8 +1899,8 @@ def _(df_grafik, switch_grafik_value):
 
 @app.cell
 def _(df_grafik, ortsteile, switch_grafik_value):
-    def grafik_lkw_einheit(df: pl.DataFrame, show: bool = False):
-        if not switch_grafik_value: return
+    # Anzahl Führerscheininhaber Klasse C getrennt nach männlich und weiblich als Balkendiagramm
+    def grafik_lkw_einheit(df: pl.DataFrame, show: bool = False):    
 
         plt.figure()
         g = sns.countplot(
@@ -1947,8 +1937,8 @@ def _(df_grafik, ortsteile, switch_grafik_value):
 
 @app.cell
 def _(df_grafik, switch_grafik_value):
-    def grafik_lkw_alter(df: pl.DataFrame, show: bool = False):
-        if not switch_grafik_value: return
+    # Übersicht Führerscheininhaber Klasse C getrennt nach männlich und weiblich als Histogramm
+    def grafik_lkw_alter(df: pl.DataFrame, show: bool = False):    
 
         plt.figure()
         g = sns.histplot(
@@ -1990,8 +1980,8 @@ def _(df_grafik, switch_grafik_value):
 
 @app.cell
 def _(df_grafik, ortsteile, switch_grafik_value):
-    def grafik_mitglieder_aufnahme(df: pl.DataFrame, show: bool = False):
-        if not switch_grafik_value: return
+    # Übersicht Personalzuwachs getrennt nach Abteilung als Balkendiagramm
+    def grafik_mitglieder_aufnahme(df: pl.DataFrame, show: bool = False):    
 
         plt.figure()
         g = sns.countplot(
@@ -2021,8 +2011,8 @@ def _(df_grafik, ortsteile, switch_grafik_value):
 @app.cell
 def _(df_grafik, switch_grafik_value):
     # TODO: Funktion üperprüfen
-    def grafik_mitglieder_verlust(df: pl.DataFrame, show: bool = False):
-        if not switch_grafik_value: return
+    # Übersicht Personalabgang getrennt nach Abteilung als Balkendiagramm
+    def grafik_mitglieder_verlust(df: pl.DataFrame, show: bool = False):    
 
         plt.figure()
         g = sns.countplot(
@@ -2051,9 +2041,9 @@ def _(df_grafik, switch_grafik_value):
 
 @app.cell
 def _(df_grafik, ortsteile, switch_grafik_value):
+    # Übersicht Personalzuwachs je Einheit getrennt nach Abteilung als Balkendiagramm
     # TODO: Funktion üperprüfen
-    def grafik_mitglieder_wechsel(df: pl.DataFrame, ortsteil: str, show: bool = False):
-        if not switch_grafik_value: return
+    def grafik_mitglieder_wechsel(df: pl.DataFrame, ortsteil: str, show: bool = False):   
 
         data=df.filter(
             pl.col("Personalbewegung").str.contains('->'),
