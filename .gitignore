@@ -1,6 +1,6 @@
 # Privat Data
-input/*
-output/*
+input/
+output/
 .env
 *.pdf
 *.csv

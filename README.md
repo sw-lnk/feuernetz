@@ -121,6 +121,7 @@ Feuerwehrhaus;Feuerwehrhaus Hamminkeln;51.73816204724966;6.5921835128642225;ware
 1. Python Umgebung erstellen: ```python3 -m venv venv```
 1. Python Umgebung starten ```source venv/bin/activate```
 1. Pakete installieren: ```pip install -r requirements.txt```
+1. Initialisierung: ```python3 init.py```
 
 ### Personalauswertung
 ```marimo run personalauswertung.py```
