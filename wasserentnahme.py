@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.17.0"
+__generated_with = "0.21.1"
 app = marimo.App(width="medium")
 
 
@@ -18,6 +18,7 @@ def _():
     from database import database as db
 
     import database.fn_config as fn_config
+
     return MarkerCluster, db, fn_config, folium, mo, os, pd, pl
 
 
@@ -32,6 +33,14 @@ def _(db):
     df_wasser = db.lese_wasserentnahmestellen()
     list_plz = db.postleitzahl_list()
     return df_wasser, list_plz
+
+
+@app.cell(hide_code=True)
+def _(df_wasser, mo):
+    mo.md(rf"""
+    Insgesamte {df_wasser.height} Wasserentnahemestellen eingelesen.
+    """)
+    return
 
 
 @app.cell
@@ -123,6 +132,7 @@ def _(pd):
         se = [df.latitude.min(), df.longitude.max()]
 
         return [sw, ne], [nw, se]
+
     return (find_NE_SW,)
 
 
@@ -245,23 +255,26 @@ def _(MarkerCluster, df, folium, map, pl, zweck_input):
 
 
 @app.cell
-def _(db, folium, map, pl):
+def _(db, folium, map, mo, os, pl):
     # Marker pro POI setzen
-    df_poi = db.lese_poi()
-    poi_typen = sorted(set(df_poi.get_column('Typ').to_list()))
+    try:
+        df_poi = db.lese_poi()
+        poi_typen = sorted(set(df_poi.get_column('Typ').to_list()))
 
-    for poi_t in poi_typen:
-        fg_poi = folium.FeatureGroup(name=poi_t).add_to(map)
-        for poi in df_poi.filter(pl.col('Typ').eq(poi_t)).iter_rows(named=True):
-            folium.Marker(
-                location=(poi['Längengrad'], poi['Breitengrad']),
-                popup=poi['Benennung'],
-                icon=folium.Icon(
-                    color=poi['Farbe'],
-                    prefix='fa',
-                    icon=poi['Icon']
-                )
-            ).add_to(fg_poi)
+        for poi_t in poi_typen:
+            fg_poi = folium.FeatureGroup(name=poi_t).add_to(map)
+            for poi in df_poi.filter(pl.col('Typ').eq(poi_t)).iter_rows(named=True):
+                folium.Marker(
+                    location=(poi['Längengrad'], poi['Breitengrad']),
+                    popup=poi['Benennung'],
+                    icon=folium.Icon(
+                        color=poi['Farbe'],
+                        prefix='fa',
+                        icon=poi['Icon']
+                    )
+                ).add_to(fg_poi)
+    except:
+        mo.md(f"## Datei {os.path.join(db.ORDNER_EINGABE, 'poi.csv')} nicht gefunden.")
     return
 
 

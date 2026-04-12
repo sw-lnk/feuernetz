@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import polars as pl
 import json
 
@@ -130,13 +131,15 @@ def lese_einsatz_einheiten_details() -> pl.DataFrame:
 
 
 def lese_wasserentnahmestellen() -> pl.DataFrame:
-  df = pl.read_csv(
-    os.path.join(ORDNER_EINGABE, 'Wasserentnahmestellen.csv'),
-    separator=';',
-    encoding="iso-8859-1",
-  )
-  df = df.with_columns(pl.col('Produktionsdatum').str.to_datetime(DATUM_FORMAT2, ambiguous='null', strict=False))
-  return df
+    paths = sorted(Path(ORDNER_EINGABE).glob("Wasserentnahmestellen_*.csv"))
+    dfs = []
+    for p in paths:
+        df = pl.read_csv(p, separator=';', encoding="iso-8859-1")
+        dfs.append(df)
+
+    df_all = pl.concat(dfs, how="diagonal_relaxed")    
+    
+    return df_all.with_columns(pl.col('Produktionsdatum').str.to_datetime(DATUM_FORMAT2, ambiguous='null', strict=False))
 
 
 def lese_geodaten(gemeindeschluessel: str) -> dict:
