@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.17.0"
+__generated_with = "0.21.1"
 app = marimo.App(width="medium")
 
 with app.setup:
@@ -10,6 +10,7 @@ with app.setup:
     import marimo as mo
     import polars as pl
     import datetime as dt
+    import locale
 
     import matplotlib.pyplot as plt
     from matplotlib.ticker import MaxNLocator
@@ -18,6 +19,21 @@ with app.setup:
     from database import database as db
 
     import database.fn_config as fn_config
+
+
+@app.cell
+def _():
+    try:
+        locale.setlocale(locale.LC_TIME, 'de_DE.UTF-8')
+    except locale.Error:
+        locale.setlocale(locale.LC_TIME, 'de_DE')
+    return
+
+
+@app.cell
+def _():
+    sns.set_theme(style="whitegrid", palette="tab10")
+    return
 
 
 @app.cell
@@ -48,12 +64,10 @@ def _():
 
 @app.cell
 def _(datum_auswertung_ende, datum_auswertung_start):
-    mo.md(
-        rf"""
+    mo.md(rf"""
     ## Auswertungszeitraum
     {datum_auswertung_start} bis {datum_auswertung_ende}
-    """
-    )
+    """)
     return
 
 
@@ -75,7 +89,7 @@ def _(datum_auswertung_ende, datum_auswertung_start):
         date_ende.year,
         date_ende.month,
         date_ende.day
-    )
+    )+dt.timedelta(days=1)
     return zeitpunkt_auswertung_ende, zeitpunkt_auswertung_start
 
 
@@ -85,7 +99,7 @@ def _(postleitzahlen, zeitpunkt_auswertung_ende, zeitpunkt_auswertung_start):
 
     df_einsatz = df_einsatz.filter(
         pl.col('Beginn').ge(zeitpunkt_auswertung_start),
-        pl.col('Beginn').le(zeitpunkt_auswertung_ende),
+        pl.col('Beginn').lt(zeitpunkt_auswertung_ende),
     )
 
     anzahl_einsaetze = df_einsatz.height
@@ -117,8 +131,7 @@ def _(
     datum_auswertung_start,
     datums_format,
 ):
-    mo.md(
-        rf"""
+    mo.md(rf"""
     ## Auswerteangaben
 
     - Zeitraum {datum_auswertung_start.value.strftime(datums_format)} bis {datum_auswertung_ende.value.strftime(datums_format)}
@@ -127,8 +140,7 @@ def _(
     - Anzahl offener Einsatzberichte: **{anzahl_einsaetze_offen}**
 
     Weitere Auswertungen erfolgen mit den bereits freigegebenen Einsatzberichten.
-    """
-    )
+    """)
     return
 
 
@@ -171,7 +183,9 @@ def _():
 
 @app.cell
 def _():
-    mo.md(r"""Filter für Einsatzzeiten.""")
+    mo.md(r"""
+    Filter für Einsatzzeiten.
+    """)
     return
 
 
@@ -301,6 +315,7 @@ def _(df_details, df_einsatz):
 
 
         return plt.gca()
+
     return (ausrueckezeiten_fahrzeug,)
 
 
@@ -362,12 +377,10 @@ def _(df_details, df_einsatz):
 
 @app.cell
 def _(anzahl_elw_einsaetze_gesamt):
-    mo.md(
-        rf"""
+    mo.md(rf"""
     ## Sonderfahrzeuge
     Ein ELW ist im Auswertezeitraum in insgesamt **{anzahl_elw_einsaetze_gesamt}** Einsätzen eingesetzt worden.
-    """
-    )
+    """)
     return
 
 
@@ -379,7 +392,9 @@ def _(ausrueckezeiten_fahrzeug):
 
 @app.cell
 def _(anzahl_dlk_einsaetze_gesamt):
-    mo.md(rf"""Eine DLK ist im Auswertezeitraum in insgesamt **{anzahl_dlk_einsaetze_gesamt}** Einsätzen eingesetzt worden.""")
+    mo.md(rf"""
+    Eine DLK ist im Auswertezeitraum in insgesamt **{anzahl_dlk_einsaetze_gesamt}** Einsätzen eingesetzt worden.
+    """)
     return
 
 
@@ -391,7 +406,9 @@ def _(ausrueckezeiten_fahrzeug):
 
 @app.cell
 def _(anzahl_rw_einsaetze_gesamt):
-    mo.md(rf"""Ein RW ist im Auswertezeitraum in insgesamt **{anzahl_rw_einsaetze_gesamt}** Einsätzen eingesetzt worden.""")
+    mo.md(rf"""
+    Ein RW ist im Auswertezeitraum in insgesamt **{anzahl_rw_einsaetze_gesamt}** Einsätzen eingesetzt worden.
+    """)
     return
 
 
@@ -403,7 +420,9 @@ def _(ausrueckezeiten_fahrzeug):
 
 @app.cell
 def _(anzahl_gwl_einsaetze_gesamt):
-    mo.md(rf"""Ein 1.GW-L2 ist im Auswertezeitraum in insgesamt **{anzahl_gwl_einsaetze_gesamt}** Einsätzen eingesetzt worden.""")
+    mo.md(rf"""
+    Ein 1.GW-L2 ist im Auswertezeitraum in insgesamt **{anzahl_gwl_einsaetze_gesamt}** Einsätzen eingesetzt worden.
+    """)
     return
 
 
@@ -415,7 +434,9 @@ def _(ausrueckezeiten_fahrzeug):
 
 @app.cell
 def _():
-    mo.md(r"""## Statuszeiten je Einheit""")
+    mo.md(r"""
+    ## Statuszeiten je Einheit
+    """)
     return
 
 
@@ -452,6 +473,142 @@ def _(ausrueckezeiten_fahrzeug):
 @app.cell
 def _(ausrueckezeiten_fahrzeug):
     ausrueckezeiten_fahrzeug('HMM.6', x_tick_rotation=90)
+    return
+
+
+@app.cell
+def _():
+    stichworte_brand = [
+        "Brand: Großbrand (mehr als 3 C-Rohre)",
+        "Brand: Kleinbrand A (max. 1 kleines Löschgerät)",
+        "Brand: Kleinbrand B (max. 1 C-Rohr)",
+        "Brand: Mittelbrand (2-3 C-Rohre)"
+    ]
+    return (stichworte_brand,)
+
+
+@app.cell
+def _():
+    stichworte_th = [
+        "Tech. Hilfe: Betriebsunfall",
+        "Tech. Hilfe: Einsturz baulicher Anlage",
+        "Tech. Hilfe: Gefahr durch Tier",
+        "Tech. Hilfe: Mensch in Notlage",
+        "Tech. Hilfe: Sonstiges",
+        "Tech. Hilfe: Tier in Notlage",
+        "Tech. Hilfe: Verkehrsunfall und -störung",
+        "Tech. Hilfe: Wasser- und Sturmschaden"
+    ]
+    return (stichworte_th,)
+
+
+@app.cell
+def _():
+    stichworte_cbrn = [
+        "CBRN: biologischer Gefahrstoff",
+        "CBRN: Gasausströmung",
+        "CBRN: Gasfreisetzung",
+        "CBRN: Gefahrguteinsatz (Transport)",
+        "CBRN: Gefahrstoffeinsatz (Lagerung)",
+        "CBRN: Mensch in Notlage",
+        "CBRN: radioaktiver oder nuklearer Gefahrstoffen",
+        "CBRN: Ölspureinsatz",
+        "CBRN: Ölunfall"
+    ]
+    return (stichworte_cbrn,)
+
+
+@app.cell
+def _():
+    stichworte_fehlalarm = [
+        "Fehlalarm: Blinde Alarme (Anscheinsgefahr, in gutem Glauben)",
+        "Fehlalarm: Blinde Alarme durch Rauchwarnmelder",
+        "Fehlalarm: Böswillige Alarme (auch vorsätzliche Auslösung einer Brandmeldeanlage)",
+        "Fehlalarm: Falschalarme in Brandmeldeanlagen"
+    ]
+    return (stichworte_fehlalarm,)
+
+
+@app.cell
+def _():
+    stichworte_sonstige = [
+        "Brand: Überörtlicher Einsatz außerhalb NRW",
+        "Brand: Überörtlicher Einsatz in NRW",
+        "Sonstiges: Brandsicherheitswache",
+        "Sonstiges: First Responder",
+        "Sonstiges: Sonstiges",
+        "Tech. Hilfe: Überörtlicher Einsatz außerhalb NRW",
+        "Tech. Hilfe: Überörtlicher Einsatz in NRW"
+    ]
+    return (stichworte_sonstige,)
+
+
+@app.cell
+def _(
+    df_einsatz,
+    stichworte_brand,
+    stichworte_cbrn,
+    stichworte_fehlalarm,
+    stichworte_sonstige,
+    stichworte_th,
+):
+    df = df_einsatz.with_columns(
+        pl.when(pl.col("Einsatzkategorie").is_in(stichworte_brand)).then(pl.lit('Brand'))
+        .when(pl.col("Einsatzkategorie").is_in(stichworte_th)).then(pl.lit('Tech. Hilfe'))
+        .when(pl.col("Einsatzkategorie").is_in(stichworte_cbrn)).then(pl.lit('CBRN'))
+        .when(pl.col("Einsatzkategorie").is_in(stichworte_fehlalarm)).then(pl.lit('Fehlalarm'))
+        .when(pl.col("Einsatzkategorie").is_in(stichworte_sonstige)).then(pl.lit('Sonstiges'))
+        .otherwise(None).alias("Kategorie"),
+
+        pl.col("Beginn").dt.month().alias("Monat"),
+        pl.col("Beginn").dt.strftime("%b").alias("Monat_"),
+        pl.col("Beginn").dt.year().alias("Jahr"),
+    )
+    return (df,)
+
+
+@app.cell
+def _(df):
+    df.filter(pl.col("Kategorie").is_null())
+    return
+
+
+@app.cell
+def _(df):
+    sns.countplot(data=df, x="Kategorie", hue="Jahr", palette="tab10").set_ylabel('Anzahl')
+    return
+
+
+@app.cell
+def _(df):
+    jahre = sorted(list(set(df.get_column('Jahr').to_list())), reverse=True)
+    return (jahre,)
+
+
+@app.cell
+def _(df, jahre):
+    plot_df1 = (
+        df
+        .group_by(["Jahr", "Monat", "Monat_", "Kategorie"])
+        .agg(pl.len().alias("Anzahl"))
+        .sort(["Jahr", "Monat", "Kategorie"])
+        .select(["Monat_", "Jahr", "Kategorie", "Anzahl"])
+    )
+    sns.lineplot(data=plot_df1, style="Jahr", style_order=jahre, hue="Kategorie", x="Monat_", y="Anzahl").set_xlabel(None)
+    return
+
+
+@app.cell
+def _(df, jahre):
+    plot_df2 = (
+        df
+        .group_by(["Jahr", "Monat", "Monat_"])
+        .agg(pl.len().alias("Anzahl"))
+        .sort(["Jahr", "Monat"])
+        .select(["Monat_", "Jahr", "Anzahl"])
+    )
+
+    sns.lineplot(data=plot_df2, style="Jahr", style_order=jahre, x="Monat_", y="Anzahl").set_xlabel(None)
     return
 
 
