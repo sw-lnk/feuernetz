@@ -62,10 +62,10 @@ def _(datum_jhv):
 
 
 @app.cell
-def _(df):
+def _(datum_auswertung, datum_befoerderung, df):
     mo.ui.button(
         label='Erstelle Daten Jahresbericht',
-        on_click=lambda _: jahresbericht.export_daten_jahresbericht(df)
+        on_click=lambda _: jahresbericht.export_daten_jahresbericht(df=df, datum_auswertung=datum_auswertung.value, datum_befoerderung=datum_befoerderung.value)
     )
     return
 
@@ -120,10 +120,9 @@ def _(datum_auswertung):
 
 
 @app.cell
-def _(datum_auswertung, datum_jahreshauptversammlung_auswertung):
+def _(datum_jahreshauptversammlung_auswertung):
     # Datum der Jahreshauptversammlung abfragen
     datum_jhv = mo.ui.date(
-        start=datum_auswertung.value+dt.timedelta(days=1),
         value=datum_jahreshauptversammlung_auswertung.date()
     )
     return (datum_jhv,)
@@ -1461,7 +1460,7 @@ def _(df, zeitpunkt_auswertung):
 def _(df):
     # Altersverteilung allgemein als Histogramm
     def grafik_mitglieder_alter_box(df: pl.DataFrame) -> plt.gca:
-    
+
         plt.figure()
         g = sns.histplot(
             df.to_pandas(),
@@ -1498,7 +1497,7 @@ def _(df):
 def _(df_grafik):
     # Altersverteilung allgemein getrennt nach männlich und weiblich als Histogramm
     def grafik_mitglieder_alter(df: pl.DataFrame, show: bool = False) -> plt.gca:
-    
+
         plt.figure()
         g = sns.displot(
             data=df.to_pandas(),
@@ -1536,7 +1535,7 @@ def _(df_grafik):
 def _(abteilungen, df_grafik):
     # Altersverteilung allgemein getrennt nach männlich und weiblich und nach Abteilung als Box-Plot
     def grafik_mitglieder_alter_box_orga(df: pl.DataFrame, show: bool = False) -> plt.gca:
-    
+
         plt.figure()
         g = sns.boxplot(
             data=df.to_pandas(),
@@ -1574,7 +1573,7 @@ def _(abteilungen, df_grafik):
 def _(df_grafik, ortsteile):
     # Altersverteilung allgemein getrennt nach männlich und weiblich und nach Ortsteil als Box-Plot
     def grafik_mitlgieder_einheit(df: pl.DataFrame, show: bool = False) -> plt.gca:
-    
+
         plt.figure()
         g = sns.boxplot(
             data=df.sort(by='Ortsteil').to_pandas(),
