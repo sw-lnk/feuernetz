@@ -5,28 +5,39 @@ app = marimo.App(width="medium")
 
 with app.setup:
     # Initialization code that runs before all other cells
-    import os
-    import math
-    import marimo as mo
-    import polars as pl
     import datetime as dt
+    import json
     import locale
+    import os
+    import subprocess
 
+    import marimo as mo
     import matplotlib.pyplot as plt
-    from matplotlib.ticker import MaxNLocator
+    import polars as pl
     import seaborn as sns
 
     from database import database as db
 
-    import database.fn_config as fn_config
+
+@app.cell
+def _():
+    switch_report = mo.ui.switch(label="Berichte erstellen")
+    switch_report
+    return (switch_report,)
+
+
+@app.cell
+def _():
+    einheiten = ["HMM.1", "HMM.2", "HMM.3", "HMM.4", "HMM.5", "HMM.6"]
+    return (einheiten,)
 
 
 @app.cell
 def _():
     try:
-        locale.setlocale(locale.LC_TIME, 'de_DE.UTF-8')
+        locale.setlocale(locale.LC_TIME, "de_DE.UTF-8")
     except locale.Error:
-        locale.setlocale(locale.LC_TIME, 'de_DE')
+        locale.setlocale(locale.LC_TIME, "de_DE")
     return
 
 
@@ -52,13 +63,9 @@ def _():
 def _():
     jahr_heute = dt.datetime.now().year
 
-    datum_auswertung_start = mo.ui.date(
-        value=dt.date(jahr_heute, 1, 1)
-    )
+    datum_auswertung_start = mo.ui.date(value=dt.date(jahr_heute, 1, 1))
 
-    datum_auswertung_ende = mo.ui.date(
-        value=dt.date(jahr_heute, 12, 31)
-    )
+    datum_auswertung_ende = mo.ui.date(value=dt.date(jahr_heute, 12, 31))
     return datum_auswertung_ende, datum_auswertung_start
 
 
@@ -80,17 +87,31 @@ def _(datum_auswertung_ende, datum_auswertung_start):
         date_start = date_ende - dt.timedelta(days=1)
 
     zeitpunkt_auswertung_start = dt.datetime(
-        date_start.year,
-        date_start.month,
-        date_start.day
+        date_start.year, date_start.month, date_start.day
     )
 
     zeitpunkt_auswertung_ende = dt.datetime(
-        date_ende.year,
-        date_ende.month,
-        date_ende.day
-    )+dt.timedelta(days=1)
+        date_ende.year, date_ende.month, date_ende.day
+    ) + dt.timedelta(days=1)
     return zeitpunkt_auswertung_ende, zeitpunkt_auswertung_start
+
+
+@app.cell
+def _(zeitpunkt_auswertung_ende, zeitpunkt_auswertung_start):
+
+    data = {
+        "datum_auswertung_start": zeitpunkt_auswertung_start.strftime("%d.%m.%Y"),
+        "datum_auswertung_ende": (
+            zeitpunkt_auswertung_ende - dt.timedelta(days=1)
+        ).strftime("%d.%m.%Y"),
+    }
+
+    # Save dictionary to JSON file with indentation and sorted keys
+    with open(
+        os.path.join(db.ORDNER_AUSGABE, "daten_auswertung.json"), "w", encoding="utf-8"
+    ) as file:
+        json.dump(data, file, indent=4, sort_keys=True, ensure_ascii=False)
+    return
 
 
 @app.cell
@@ -98,21 +119,23 @@ def _(postleitzahlen, zeitpunkt_auswertung_ende, zeitpunkt_auswertung_start):
     df_einsatz = db.lese_einsatzdaten()
 
     df_einsatz = df_einsatz.filter(
-        pl.col('Beginn').ge(zeitpunkt_auswertung_start),
-        pl.col('Beginn').lt(zeitpunkt_auswertung_ende),
+        pl.col("Beginn").ge(zeitpunkt_auswertung_start),
+        pl.col("Beginn").lt(zeitpunkt_auswertung_ende),
     )
 
     anzahl_einsaetze = df_einsatz.height
-    anzahl_einsaetze_extern = df_einsatz.filter(pl.col('Postleitzahl').is_in(postleitzahlen).not_()).height
+    anzahl_einsaetze_extern = df_einsatz.filter(
+        pl.col("Postleitzahl").is_in(postleitzahlen).not_()
+    ).height
 
     df_einsatz = df_einsatz.filter(
-        pl.col('Status').eq('freigegeben'),
+        pl.col("Status").eq("freigegeben"),
     )
 
-    anzahl_einsaetze_offen = anzahl_einsaetze -df_einsatz.height
+    anzahl_einsaetze_offen = anzahl_einsaetze - df_einsatz.height
 
     df_einsatz = df_einsatz.filter(
-        pl.col('Postleitzahl').is_in(postleitzahlen),
+        pl.col("Postleitzahl").is_in(postleitzahlen),
     )
     return (
         anzahl_einsaetze,
@@ -150,15 +173,117 @@ def _(df_einsatz):
     df_details = df_details.filter(
         # pl.col('Beginn').ge(zeitpunkt_auswertung_start),
         # pl.col('Beginn').le(zeitpunkt_auswertung_ende),
-        pl.col('Einsatznummer').is_in(df_einsatz.select('Einsatznummer').to_series().to_list()),
+        pl.col("Einsatznummer").is_in(
+            df_einsatz.select("Einsatznummer").to_series().to_list()
+        ),
     )
 
-    df_details = df_details.with_columns([
-        (pl.col('Diff. Alarm-S3 Sek.')/60).alias('Diff. Alarm-S3 Min.'),
-        (pl.col('Diff. S3-S4 Sek.')/60).alias('Diff. S3-S4 Min.'),
-        ((pl.col('Ende S2') - pl.col('Alarm')).dt.total_seconds()/60/60).alias('Gesamtdauer'),
-    ])
+    df_details = df_details.with_columns(
+        [
+            (pl.col("Diff. Alarm-S3 Sek.") / 60).alias("Diff. Alarm-S3 Min."),
+            (pl.col("Diff. S3-S4 Sek.") / 60).alias("Diff. S3-S4 Min."),
+            ((pl.col("Ende S2") - pl.col("Alarm")).dt.total_seconds() / 60 / 60).alias(
+                "Gesamtdauer"
+            ),
+            pl.col("Einheit").str.split(" ").list.last().alias("Ortsteil"),
+        ]
+    )
     return (df_details,)
+
+
+@app.cell
+def _(df_details, einheiten, switch_report):
+    date_str_format = "%d.%m.%Y %H:%M"
+
+    col_selection = [
+        "Einsatznummer",
+        "Fahrzeug",
+        "Stichwort",
+        "Alarm",
+        "Diff. Alarm-S3 Min.",
+        "Ausruecken S3",
+        "Diff. S3-S4 Min.",
+        "Eintreffen S4",
+        "Ende S2",
+        "Gesamtdauer",
+    ]
+
+    if switch_report.value:
+        (
+            df_details.select(col_selection)
+            .with_columns(
+                pl.col("Fahrzeug").str.replace("FL.HMM.", ""),
+                pl.col("Alarm").dt.strftime(format=date_str_format),
+                pl.col("Ausruecken S3").dt.strftime(format=date_str_format),
+                pl.col("Eintreffen S4").dt.strftime(format=date_str_format),
+                pl.col("Ende S2").dt.strftime(format=date_str_format),
+                pl.selectors.float().round(1),
+            )
+            .rename({"Einsatznummer": "ID", "Gesamtdauer": "Dauer ges. Stunden"})
+            .write_csv(file=os.path.join(db.ORDNER_AUSGABE, "statuszeiten_gesamt.csv"))
+        )
+
+        for einheit in einheiten:
+            einheit_text = einheit.replace(".", "_")
+            (
+                df_details.filter(pl.col("Fahrzeug").str.contains(einheit))
+                .select(col_selection)
+                .with_columns(
+                    pl.col("Fahrzeug").str.replace("FL.HMM.", ""),
+                    pl.col("Alarm").dt.strftime(format=date_str_format),
+                    pl.col("Ausruecken S3").dt.strftime(format=date_str_format),
+                    pl.col("Eintreffen S4").dt.strftime(format=date_str_format),
+                    pl.col("Ende S2").dt.strftime(format=date_str_format),
+                    pl.selectors.float().round(1),
+                )
+                .rename({"Einsatznummer": "ID", "Gesamtdauer": "Dauer ges. Stunden"})
+                .write_csv(
+                    os.path.join(db.ORDNER_AUSGABE, f"statuszeiten_{einheit_text}.csv"),
+                    decimal_comma=True,
+                )
+            )
+
+        ORDNER_REPORT = "report"
+
+        os.makedirs(os.path.join(db.ORDNER_AUSGABE, ORDNER_REPORT), exist_ok=True)
+
+        reports = [
+            "einsatzauswertung",
+            "einsatzauswertung_le1",
+            "einsatzauswertung_le2",
+            "einsatzauswertung_le3",
+            "einsatzauswertung_le4",
+            "einsatzauswertung_le5",
+            "einsatzauswertung_le6",
+        ]
+
+        for report in reports:
+            subprocess.run(
+                [
+                    "typst",
+                    "compile",
+                    "--root",
+                    ".",
+                    os.path.join(ORDNER_REPORT, report + ".typ"),
+                    os.path.join(db.ORDNER_AUSGABE, ORDNER_REPORT, report + ".pdf"),
+                ]
+            )
+
+            subprocess.run(
+                [
+                    "gs",
+                    "-sDEVICE=pdfwrite",
+                    "-dPDFSETTINGS=/ebook",
+                    "-dNOPAUSE",
+                    "-dQUIET",
+                    "-dBATCH",
+                    f"-sOutputFile={os.path.join(db.ORDNER_AUSGABE, ORDNER_REPORT, report.capitalize() + '.pdf')}",
+                    os.path.join(db.ORDNER_AUSGABE, ORDNER_REPORT, report + ".pdf"),
+                ]
+            )
+
+            os.unlink(os.path.join(db.ORDNER_AUSGABE, ORDNER_REPORT, report + ".pdf"))
+    return (col_selection,)
 
 
 @app.cell
@@ -175,9 +300,9 @@ def _():
 
 @app.cell
 def _():
-    minuten_ausruecken = mo.ui.number(start=0, value=15, label='Ausrücken [Minuten]')
-    minuten_anfahrt = mo.ui.number(start=0, value=15, label='Anfahrt [Minuten]')
-    stunden_gesamt = mo.ui.number(start=0, value=15, label='Gesamtdauer [Stunden]')
+    minuten_ausruecken = mo.ui.number(start=0, value=15, label="Ausrücken [Minuten]")
+    minuten_anfahrt = mo.ui.number(start=0, value=15, label="Anfahrt [Minuten]")
+    stunden_gesamt = mo.ui.number(start=0, value=15, label="Gesamtdauer [Stunden]")
     return minuten_anfahrt, minuten_ausruecken, stunden_gesamt
 
 
@@ -191,59 +316,107 @@ def _():
 
 @app.cell
 def _(minuten_anfahrt, minuten_ausruecken, stunden_gesamt):
-    mo.hstack([
-        minuten_ausruecken, minuten_anfahrt, stunden_gesamt
-    ])
+    mo.hstack([minuten_ausruecken, minuten_anfahrt, stunden_gesamt])
     return
 
 
 @app.cell
-def _(df_details, minuten_anfahrt, minuten_ausruecken, stunden_gesamt):
+def _(
+    col_selection,
+    df_details,
+    minuten_anfahrt,
+    minuten_ausruecken,
+    stunden_gesamt,
+):
     mo.ui.dataframe(
         df=df_details.filter(
-            pl.col('Diff. Alarm-S3 Min.').ge(minuten_ausruecken.value) |
-            pl.col('Diff. S3-S4 Min.').ge(minuten_anfahrt.value) |
-            pl.col('Gesamtdauer').ge(stunden_gesamt.value)
+            pl.col("Diff. Alarm-S3 Min.").ge(minuten_ausruecken.value)
+            | pl.col("Diff. S3-S4 Min.").ge(minuten_anfahrt.value)
+            | pl.col("Gesamtdauer").ge(stunden_gesamt.value)
+            # pl.col('Fahrzeug').str.contains('HLF') |
+            # pl.col('Fahrzeug').str.contains('LF') |
+            # pl.col('Fahrzeug').str.contains('RW') |
+            # pl.col('Fahrzeug').str.contains('DLK')
         )
+        .with_columns(
+            pl.col("Diff. Alarm-S3 Min.").round(1),
+            pl.col("Diff. S3-S4 Min.").round(1),
+            pl.col("Gesamtdauer").round(1),
+        )
+        .select(col_selection)
+    )
+    # .filter(pl.col('Fahrzeug').str.contains('privat').not_())
+    return
+
+
+@app.cell
+def _(df_details):
+    df_details.write_csv(
+        os.path.join(db.ORDNER_AUSGABE, "einsatzdetails.csv"), decimal_comma=True
     )
     return
 
 
 @app.cell
 def _(df_details):
-    df_details.write_csv(os.path.join(db.ORDNER_AUSGABE, 'einsatzdetails.csv'), decimal_comma=True)
+    mo.ui.dataframe(df_details)
+    return
+
+
+@app.cell
+def _(df_details):
+    # TODO: Personalgrafik erstellen
+    data_pers = df_details.filter(
+        pl.col("Fahrzeug").str.contains("privat").not_(),
+        pl.col("Ortsteil").is_in(["Hamminkeln"]),
+    )
+
+    ax = sns.boxplot(
+        data=data_pers,
+        x="Fahrzeug",
+        y="Gesamt",
+    )
+
+    ax.tick_params(axis="x", labelrotation=90)
+    ax
     return
 
 
 @app.cell
 def _(df_details, df_einsatz):
-    def ausrueckezeiten_fahrzeug(kennung: str = None, ortsteil: list[str] = None, x_tick_rotation: int = 0):
-        df_fzg = df_details.filter(
-                pl.col('Fahrzeug').str.contains('privat').not_()
-            )
+    def ausrueckezeiten_fahrzeug(
+        kennung: str = None, ortsteil: list[str] = None, x_tick_rotation: int = 0
+    ):
+        df_fzg = df_details.filter(pl.col("Fahrzeug").str.contains("privat").not_())
 
         df_fzg = df_fzg.with_columns(
-            pl.when(pl.col('Einsatznummer').is_nan()).then(pl.lit('Ja')).otherwise(pl.lit('Nein')).alias('Stammeinheit')
-        ).sort('Fahrzeug')
+            pl.when(pl.col("Einsatznummer").is_nan())
+            .then(pl.lit("Ja"))
+            .otherwise(pl.lit("Nein"))
+            .alias("Stammeinheit")
+        ).sort("Fahrzeug")
 
         if kennung:
-            df_fzg = df_fzg.filter(
-                pl.col('Fahrzeug').str.contains(kennung)
-            )
+            df_fzg = df_fzg.filter(pl.col("Fahrzeug").str.contains(kennung))
 
         df_est = df_einsatz.filter(
-            pl.col('Einsatznummer').is_in(df_fzg.select('Einsatznummer').to_series().to_list()),
+            pl.col("Einsatznummer").is_in(
+                df_fzg.select("Einsatznummer").to_series().to_list()
+            ),
         )
 
         if ortsteil:
-            df_est = df_est.filter(
-                pl.col('Ortsteil').is_in(ortsteil)
-            )
+            df_est = df_est.filter(pl.col("Ortsteil").is_in(ortsteil))
 
             df_fzg = df_fzg.with_columns(
                 pl.when(
-                    pl.col('Einsatznummer').is_in(df_est.select('Einsatznummer').to_series().to_list()),
-                ).then(pl.lit('Ja')).otherwise(pl.lit('Nein')).alias('Stammeinheit')
+                    pl.col("Einsatznummer").is_in(
+                        df_est.select("Einsatznummer").to_series().to_list()
+                    ),
+                )
+                .then(pl.lit("Ja"))
+                .otherwise(pl.lit("Nein"))
+                .alias("Stammeinheit")
             )
 
         fig, axes = plt.subplots(1, 3)
@@ -251,68 +424,63 @@ def _(df_details, df_einsatz):
         sns.boxplot(
             ax=axes[0],
             data=df_fzg,
-            x='Fahrzeug',
-            y='Diff. Alarm-S3 Min.',
-            hue='Stammeinheit' if ortsteil else None,
-            hue_order=['Ja', 'Nein'] if ortsteil else None,
+            x="Fahrzeug",
+            y="Diff. Alarm-S3 Min.",
+            hue="Stammeinheit" if ortsteil else None,
+            hue_order=["Ja", "Nein"] if ortsteil else None,
         )
 
         sns.boxplot(
             ax=axes[1],
             data=df_fzg,
-            x='Fahrzeug',
-            y='Diff. S3-S4 Min.',
-            hue='Stammeinheit' if ortsteil else None,
-            hue_order=['Ja', 'Nein'] if ortsteil else None,
+            x="Fahrzeug",
+            y="Diff. S3-S4 Min.",
+            hue="Stammeinheit" if ortsteil else None,
+            hue_order=["Ja", "Nein"] if ortsteil else None,
         )
 
         sns.boxplot(
             ax=axes[2],
             data=df_fzg,
-            x='Fahrzeug',
-            y='Gesamtdauer',
+            x="Fahrzeug",
+            y="Gesamtdauer",
             # showfliers=False,
-            hue='Stammeinheit' if ortsteil else None,
-            hue_order=['Ja', 'Nein'] if ortsteil else None,
+            hue="Stammeinheit" if ortsteil else None,
+            hue_order=["Ja", "Nein"] if ortsteil else None,
         )
 
-        fig.figure.suptitle('Fahrzeug-Statuszeiten')
+        fig.figure.suptitle("Fahrzeug-Statuszeiten")
 
         if kennung:
-            fig.figure.suptitle(f'Statuszeiten {kennung}')
+            fig.figure.suptitle(f"Statuszeiten {kennung}")
 
         axes[0].set(
             xlabel=None,
-            ylabel='Zeit Alarm bis Ausrücken [Min]',
+            ylabel="Zeit Alarm bis Ausrücken [Min]",
         )
 
-        axes[1].set(
-            xlabel=None,
-            ylabel='Zeit Ausrücken bis Eintreffen [Min]'
-        )
+        axes[1].set(xlabel=None, ylabel="Zeit Ausrücken bis Eintreffen [Min]")
 
-        axes[2].set(
-            xlabel=None,
-            ylabel='Gesamtdauer [h]'
-        )
+        axes[2].set(xlabel=None, ylabel="Gesamtdauer [h]")
 
-        axes[0].tick_params(axis='x', labelrotation = x_tick_rotation)
-        axes[1].tick_params(axis='x', labelrotation = x_tick_rotation)
-        axes[2].tick_params(axis='x', labelrotation = x_tick_rotation)
+        axes[0].tick_params(axis="x", labelrotation=x_tick_rotation)
+        axes[1].tick_params(axis="x", labelrotation=x_tick_rotation)
+        axes[2].tick_params(axis="x", labelrotation=x_tick_rotation)
 
         plt.tight_layout()
 
-        datei_name_list = ['Statuszeiten']
+        datei_name_list = ["Statuszeiten"]
         if kennung:
             datei_name_list.append(kennung)
         if ortsteil != None:
             datei_name_list.append(*ortsteil)
 
-        datei_name = '_'.join(datei_name_list)
+        datei_name = "_".join(datei_name_list)
 
-        output_file = os.path.join(db.ORDNER_AUSGABE, db.ORDNER_AUSGABE_GRAFIK, datei_name+'.png')
-        plt.savefig(output_file, bbox_inches = 'tight')
-
+        output_file = os.path.join(
+            db.ORDNER_AUSGABE, db.ORDNER_AUSGABE_GRAFIK, datei_name + ".png"
+        )
+        plt.savefig(output_file, bbox_inches="tight")
 
         return plt.gca()
 
@@ -321,12 +489,12 @@ def _(df_details, df_einsatz):
 
 @app.cell
 def _(df_details, df_einsatz):
-    df_elw_details = df_details.filter(
-        pl.col('Fahrzeug').str.contains('ELW')
-    )
+    df_elw_details = df_details.filter(pl.col("Fahrzeug").str.contains("ELW"))
 
     df_elw = df_einsatz.filter(
-        pl.col('Einsatznummer').is_in(df_elw_details.select('Einsatznummer').to_series().to_list())
+        pl.col("Einsatznummer").is_in(
+            df_elw_details.select("Einsatznummer").to_series().to_list()
+        )
     )
 
     anzahl_elw_einsaetze_gesamt = df_elw.height
@@ -335,12 +503,12 @@ def _(df_details, df_einsatz):
 
 @app.cell
 def _(df_details, df_einsatz):
-    df_dlk_details = df_details.filter(
-        pl.col('Fahrzeug').str.contains('DLK')
-    )
+    df_dlk_details = df_details.filter(pl.col("Fahrzeug").str.contains("DLK"))
 
     df_dlk = df_einsatz.filter(
-        pl.col('Einsatznummer').is_in(df_dlk_details.select('Einsatznummer').to_series().to_list())
+        pl.col("Einsatznummer").is_in(
+            df_dlk_details.select("Einsatznummer").to_series().to_list()
+        )
     )
 
     anzahl_dlk_einsaetze_gesamt = df_dlk.height
@@ -349,12 +517,12 @@ def _(df_details, df_einsatz):
 
 @app.cell
 def _(df_details, df_einsatz):
-    df_rw_details = df_details.filter(
-        pl.col('Fahrzeug').str.contains('DLK')
-    )
+    df_rw_details = df_details.filter(pl.col("Fahrzeug").str.contains("DLK"))
 
     df_rw = df_einsatz.filter(
-        pl.col('Einsatznummer').is_in(df_rw_details.select('Einsatznummer').to_series().to_list())
+        pl.col("Einsatznummer").is_in(
+            df_rw_details.select("Einsatznummer").to_series().to_list()
+        )
     )
 
     anzahl_rw_einsaetze_gesamt = df_rw.height
@@ -363,12 +531,12 @@ def _(df_details, df_einsatz):
 
 @app.cell
 def _(df_details, df_einsatz):
-    df_gwl_details = df_details.filter(
-        pl.col('Fahrzeug').str.contains('GW-L2')
-    )
+    df_gwl_details = df_details.filter(pl.col("Fahrzeug").str.contains("GW-L2"))
 
     df_gwl = df_einsatz.filter(
-        pl.col('Einsatznummer').is_in(df_gwl_details.select('Einsatznummer').to_series().to_list())
+        pl.col("Einsatznummer").is_in(
+            df_gwl_details.select("Einsatznummer").to_series().to_list()
+        )
     )
 
     anzahl_gwl_einsaetze_gesamt = df_gwl.height
@@ -386,7 +554,7 @@ def _(anzahl_elw_einsaetze_gesamt):
 
 @app.cell
 def _(ausrueckezeiten_fahrzeug):
-    ausrueckezeiten_fahrzeug('ELW', ['Brünen'])
+    ausrueckezeiten_fahrzeug("ELW", ["Brünen"])
     return
 
 
@@ -400,7 +568,7 @@ def _(anzahl_dlk_einsaetze_gesamt):
 
 @app.cell
 def _(ausrueckezeiten_fahrzeug):
-    ausrueckezeiten_fahrzeug('DLK', ['Hamminkeln'])
+    ausrueckezeiten_fahrzeug("DLK", ["Hamminkeln"])
     return
 
 
@@ -414,7 +582,7 @@ def _(anzahl_rw_einsaetze_gesamt):
 
 @app.cell
 def _(ausrueckezeiten_fahrzeug):
-    ausrueckezeiten_fahrzeug('RW', ['Hamminkeln'])
+    ausrueckezeiten_fahrzeug("RW", ["Hamminkeln"])
     return
 
 
@@ -428,7 +596,7 @@ def _(anzahl_gwl_einsaetze_gesamt):
 
 @app.cell
 def _(ausrueckezeiten_fahrzeug):
-    ausrueckezeiten_fahrzeug('GW-L2', ['Hamminkeln'])
+    ausrueckezeiten_fahrzeug("GW-L2", ["Hamminkeln"])
     return
 
 
@@ -442,37 +610,37 @@ def _():
 
 @app.cell
 def _(ausrueckezeiten_fahrzeug):
-    ausrueckezeiten_fahrzeug('HMM.1', x_tick_rotation=90)
+    ausrueckezeiten_fahrzeug("HMM.1", x_tick_rotation=90)
     return
 
 
 @app.cell
 def _(ausrueckezeiten_fahrzeug):
-    ausrueckezeiten_fahrzeug('HMM.2', x_tick_rotation=90)
+    ausrueckezeiten_fahrzeug("HMM.2", x_tick_rotation=90)
     return
 
 
 @app.cell
 def _(ausrueckezeiten_fahrzeug):
-    ausrueckezeiten_fahrzeug('HMM.3', x_tick_rotation=90)
+    ausrueckezeiten_fahrzeug("HMM.3", x_tick_rotation=90)
     return
 
 
 @app.cell
 def _(ausrueckezeiten_fahrzeug):
-    ausrueckezeiten_fahrzeug('HMM.4', x_tick_rotation=90)
+    ausrueckezeiten_fahrzeug("HMM.4", x_tick_rotation=90)
     return
 
 
 @app.cell
 def _(ausrueckezeiten_fahrzeug):
-    ausrueckezeiten_fahrzeug('HMM.5', x_tick_rotation=90)
+    ausrueckezeiten_fahrzeug("HMM.5", x_tick_rotation=90)
     return
 
 
 @app.cell
 def _(ausrueckezeiten_fahrzeug):
-    ausrueckezeiten_fahrzeug('HMM.6', x_tick_rotation=90)
+    ausrueckezeiten_fahrzeug("HMM.6", x_tick_rotation=90)
     return
 
 
@@ -482,7 +650,7 @@ def _():
         "Brand: Großbrand (mehr als 3 C-Rohre)",
         "Brand: Kleinbrand A (max. 1 kleines Löschgerät)",
         "Brand: Kleinbrand B (max. 1 C-Rohr)",
-        "Brand: Mittelbrand (2-3 C-Rohre)"
+        "Brand: Mittelbrand (2-3 C-Rohre)",
     ]
     return (stichworte_brand,)
 
@@ -497,7 +665,7 @@ def _():
         "Tech. Hilfe: Sonstiges",
         "Tech. Hilfe: Tier in Notlage",
         "Tech. Hilfe: Verkehrsunfall und -störung",
-        "Tech. Hilfe: Wasser- und Sturmschaden"
+        "Tech. Hilfe: Wasser- und Sturmschaden",
     ]
     return (stichworte_th,)
 
@@ -513,7 +681,7 @@ def _():
         "CBRN: Mensch in Notlage",
         "CBRN: radioaktiver oder nuklearer Gefahrstoffen",
         "CBRN: Ölspureinsatz",
-        "CBRN: Ölunfall"
+        "CBRN: Ölunfall",
     ]
     return (stichworte_cbrn,)
 
@@ -524,7 +692,7 @@ def _():
         "Fehlalarm: Blinde Alarme (Anscheinsgefahr, in gutem Glauben)",
         "Fehlalarm: Blinde Alarme durch Rauchwarnmelder",
         "Fehlalarm: Böswillige Alarme (auch vorsätzliche Auslösung einer Brandmeldeanlage)",
-        "Fehlalarm: Falschalarme in Brandmeldeanlagen"
+        "Fehlalarm: Falschalarme in Brandmeldeanlagen",
     ]
     return (stichworte_fehlalarm,)
 
@@ -538,7 +706,7 @@ def _():
         "Sonstiges: First Responder",
         "Sonstiges: Sonstiges",
         "Tech. Hilfe: Überörtlicher Einsatz außerhalb NRW",
-        "Tech. Hilfe: Überörtlicher Einsatz in NRW"
+        "Tech. Hilfe: Überörtlicher Einsatz in NRW",
     ]
     return (stichworte_sonstige,)
 
@@ -553,13 +721,18 @@ def _(
     stichworte_th,
 ):
     df = df_einsatz.with_columns(
-        pl.when(pl.col("Einsatzkategorie").is_in(stichworte_brand)).then(pl.lit('Brand'))
-        .when(pl.col("Einsatzkategorie").is_in(stichworte_th)).then(pl.lit('Tech. Hilfe'))
-        .when(pl.col("Einsatzkategorie").is_in(stichworte_cbrn)).then(pl.lit('CBRN'))
-        .when(pl.col("Einsatzkategorie").is_in(stichworte_fehlalarm)).then(pl.lit('Fehlalarm'))
-        .when(pl.col("Einsatzkategorie").is_in(stichworte_sonstige)).then(pl.lit('Sonstiges'))
-        .otherwise(None).alias("Kategorie"),
-
+        pl.when(pl.col("Einsatzkategorie").is_in(stichworte_brand))
+        .then(pl.lit("Brand"))
+        .when(pl.col("Einsatzkategorie").is_in(stichworte_th))
+        .then(pl.lit("Tech. Hilfe"))
+        .when(pl.col("Einsatzkategorie").is_in(stichworte_cbrn))
+        .then(pl.lit("CBRN"))
+        .when(pl.col("Einsatzkategorie").is_in(stichworte_fehlalarm))
+        .then(pl.lit("Fehlalarm"))
+        .when(pl.col("Einsatzkategorie").is_in(stichworte_sonstige))
+        .then(pl.lit("Sonstiges"))
+        .otherwise(None)
+        .alias("Kategorie"),
         pl.col("Beginn").dt.month().alias("Monat"),
         pl.col("Beginn").dt.strftime("%b").alias("Monat_"),
         pl.col("Beginn").dt.year().alias("Jahr"),
@@ -575,40 +748,49 @@ def _(df):
 
 @app.cell
 def _(df):
-    sns.countplot(data=df, x="Kategorie", hue="Jahr", palette="tab10").set_ylabel('Anzahl')
+    sns.countplot(data=df, x="Kategorie", hue="Jahr", palette="tab10").set_ylabel(
+        "Anzahl"
+    )
     return
 
 
 @app.cell
 def _(df):
-    jahre = sorted(list(set(df.get_column('Jahr').to_list())), reverse=True)
+    jahre = sorted(list(set(df.get_column("Jahr").to_list())), reverse=True)
     return (jahre,)
 
 
 @app.cell
 def _(df, jahre):
     plot_df1 = (
-        df
-        .group_by(["Jahr", "Monat", "Monat_", "Kategorie"])
+        df.group_by(["Jahr", "Monat", "Monat_", "Kategorie"])
         .agg(pl.len().alias("Anzahl"))
         .sort(["Jahr", "Monat", "Kategorie"])
         .select(["Monat_", "Jahr", "Kategorie", "Anzahl"])
     )
-    sns.lineplot(data=plot_df1, style="Jahr", style_order=jahre, hue="Kategorie", x="Monat_", y="Anzahl").set_xlabel(None)
+    sns.lineplot(
+        data=plot_df1,
+        style="Jahr",
+        style_order=jahre,
+        hue="Kategorie",
+        x="Monat_",
+        y="Anzahl",
+    ).set_xlabel(None)
     return
 
 
 @app.cell
 def _(df, jahre):
     plot_df2 = (
-        df
-        .group_by(["Jahr", "Monat", "Monat_"])
+        df.group_by(["Jahr", "Monat", "Monat_"])
         .agg(pl.len().alias("Anzahl"))
         .sort(["Jahr", "Monat"])
         .select(["Monat_", "Jahr", "Anzahl"])
     )
 
-    sns.lineplot(data=plot_df2, style="Jahr", style_order=jahre, x="Monat_", y="Anzahl").set_xlabel(None)
+    sns.lineplot(
+        data=plot_df2, style="Jahr", style_order=jahre, x="Monat_", y="Anzahl"
+    ).set_xlabel(None)
     return
 
 
