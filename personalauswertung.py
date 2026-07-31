@@ -1,12 +1,13 @@
 import marimo
 
-__generated_with = "0.21.1"
+__generated_with = "0.23.15"
 app = marimo.App(width="medium", app_title="Personalauswertung")
 
 with app.setup:
     # Initialization code that runs before all other cells
     import datetime as dt
     import os
+    import subprocess
 
     import marimo as mo
     import matplotlib.pyplot as plt
@@ -73,7 +74,7 @@ def _(datum_auswertung, datum_befoerderung, df):
 
 @app.cell
 def _():
-    switch_grafik = mo.ui.switch(label="Erstelle Grafiken")
+    switch_grafik = mo.ui.switch(label="Erstelle Grafiken und Bericht")
     switch_grafik
     return (switch_grafik,)
 
@@ -2117,6 +2118,38 @@ def _(df_grafik, ortsteile, switch_grafik_value):
             )
 
     grafiken_einheit_wechsel
+    return
+
+
+@app.cell
+def _():
+    report = "personalauswertung"
+
+    subprocess.run(
+        [
+            "typst",
+            "compile",
+            "--root",
+            ".",
+            os.path.join(db.ORDNER_REPORT, report + ".typ"),
+            os.path.join(db.ORDNER_AUSGABE, db.ORDNER_REPORT, report + ".pdf"),
+        ]
+    )
+
+    subprocess.run(
+        [
+            "gs",
+            "-sDEVICE=pdfwrite",
+            "-dPDFSETTINGS=/ebook",
+            "-dNOPAUSE",
+            "-dQUIET",
+            "-dBATCH",
+            f"-sOutputFile={os.path.join(db.ORDNER_AUSGABE, db.ORDNER_REPORT, report.capitalize() + '.pdf')}",
+            os.path.join(db.ORDNER_AUSGABE, db.ORDNER_REPORT, report + ".pdf"),
+        ]
+    )
+
+    os.unlink(os.path.join(db.ORDNER_AUSGABE, db.ORDNER_REPORT, report + ".pdf"))
     return
 
 

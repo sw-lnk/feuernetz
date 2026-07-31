@@ -1,28 +1,11 @@
-#import "data.typ": feuerwehr
+#import "lib.typ": report, filter_einheit, tabelle_einheit, staff_image
 
-#set page(footer: [
-  #datetime.today().display("[day].[month].[year]")
-  #h(1fr)
-  #feuerwehr
-  #h(1fr)
-  Personalauswertung
-])
-
-#show heading.where(level: 1): it => { pagebreak(weak: true); it }
-
-#let filter_einheit(data, einheit) = {
-  data.filter(row => {row.first() == einheit}).map(row => row.slice(1))
-}
-
-#let tabelle_einheit(data) = {
-  table(
-  columns: 2,
-  align: (start, end),
-  stroke: 1pt + gray,
-  [*Abteilung*], [*Mitglieder*],
-  ..data.flatten(),
-)
-}
+#let contact = [*Leitung der Feuerwehr*\
+    #link("mailto:wehrleitung@feuerwehr-hamminkeln.de")[
+      wehrleitung$at$feuerwehr-hamminkeln.de
+    ]\
+    Brüner Straße 9, 46499 Hamminkeln
+  ]
 
 #let personal_gesamt = csv("../output/personal_ges_pivot.csv").sorted()
 #let personal_hamminkeln = filter_einheit(personal_gesamt, "Hamminkeln")
@@ -32,14 +15,14 @@
 #let personal_wertherbruch = filter_einheit(personal_gesamt, "Wertherbruch")
 #let personal_mehrhoog = filter_einheit(personal_gesamt, "Mehrhoog")
 
-#let staff_image(path, width: 85%) = {
-  align(center)[
-    #image(path, width: width )
-  ]
-}
+#report(
+  doc-title: "Personalauswertung",
+  author: "Feuerwehr Hamminkeln",
+  logo: image("../input/0_logo-FW-HMM.png", width: 85%),
+  contact: contact
+)[
 
-#title("Personalauswertung")
-
+= Mitgliederübersicht
 #staff_image("../output/grafik/Mitglieder_alter_box.png")
 #staff_image("../output/grafik/Mitglieder_alter_box_orga.png")
 #staff_image("../output/grafik/Mitglieder_alter.png", width: 100%)
@@ -51,15 +34,15 @@
 
 
 
-#pagebreak()
+= Atemschutz
 #staff_image("../output/grafik/AGT_alter.png")
 #staff_image("../output/grafik/AGT_einheiten.png")
 
-#pagebreak()
+= CSA Träger
 #staff_image("../output/grafik/CSA_alter.png")
 #staff_image("../output/grafik/CSA_einheiten.png")
 
-#pagebreak()
+= LKW Führerschein
 #staff_image("../output/grafik/LKW_alter.png")
 #staff_image("../output/grafik/LKW_einheit.png")
 
@@ -114,3 +97,4 @@
   [*Ortsteil*], [*Anzahl*],
   ..personal_gesamt.filter(row => "Kinder" in row.at(1)).map(row => (row.first(), row.last())).flatten(),
 )
+]
