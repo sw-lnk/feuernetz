@@ -4,6 +4,7 @@
   doc-title: none,
   subtitle: none,
   author: none,
+  period: none,
   logo: none,
   contact: none,
   language: "de",
@@ -14,8 +15,6 @@
   datetime-fmt: "[day].[month].[year]",
   body,
 ) = {
-
-  let data = json("../output/daten_auswertung.json")
 
   // ----- Global Parameters ------------------------
 
@@ -58,10 +57,13 @@
     #text(font: heading-font, 3em, doc-title)
     #v(0.4fr)
     #text(font: heading-font, 2.7em, subtitle)
-    #v(1fr)
-    #text(font: heading-font, 1.8em, [
-      #data.datum_auswertung_start bis #data.datum_auswertung_ende
-    ])
+    #if period != none {
+      v(1fr)
+      text(font: heading-font, 1.8em, [
+        #period
+      ])
+    }
+    
     #v(1fr)
   ])
 
@@ -157,4 +159,27 @@
     table.header([*ID*], [*Fahrzeug*], [*Stichwort*], [*Alarm*], [*Alarm bis Status 3 [Min]*], [*Status 3*], [*Status 3 bis Status 4 [Min]*], [*Status 4*], [*Status 2*], [*Dauer Ges. [h]*]),
     ..content.flatten()
   )
+}
+
+// ----- filter personal
+#let filter_einheit(data, einheit) = {
+  data.filter(row => {row.first() == einheit}).map(row => row.slice(1))
+}
+
+// ----- unit table
+#let tabelle_einheit(data) = {
+  table(
+  columns: 2,
+  align: (start, end),
+  stroke: 1pt + gray,
+  [*Abteilung*], [*Mitglieder*],
+  ..data.flatten(),
+)
+}
+
+// ----- image personal
+#let staff_image(path, width: 85%) = {
+  align(center)[
+    #image(path, width: width )
+  ]
 }

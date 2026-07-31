@@ -1,5 +1,8 @@
 #import "lib.typ": report, status_image, data_table
 
+
+#let data = json("../output/daten_auswertung.json")
+
 #let contact = [*Leitung der Feuerwehr*\
     #link("mailto:wehrleitung@feuerwehr-hamminkeln.de")[
       wehrleitung$at$feuerwehr-hamminkeln.de
@@ -11,7 +14,8 @@
   doc-title: "Einsatzauswertung Gesamt",
   author: "Feuerwehr Hamminkeln",
   logo: image("../input/0_logo-FW-HMM.png", width: 85%),
-  contact: contact
+  contact: contact,
+  period: [#data.datum_auswertung_start bis #data.datum_auswertung_ende]
 )[
 
 = Statuszeiten LE Hamminkeln
