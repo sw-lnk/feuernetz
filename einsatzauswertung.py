@@ -243,9 +243,7 @@ def _(df_details, einheiten, switch_report):
                 )
             )
 
-        ORDNER_REPORT = "report"
-
-        os.makedirs(os.path.join(db.ORDNER_AUSGABE, ORDNER_REPORT), exist_ok=True)
+        os.makedirs(os.path.join(db.ORDNER_AUSGABE, db.ORDNER_REPORT), exist_ok=True)
 
         reports = [
             "einsatzauswertung",
@@ -264,8 +262,8 @@ def _(df_details, einheiten, switch_report):
                     "compile",
                     "--root",
                     ".",
-                    os.path.join(ORDNER_REPORT, report + ".typ"),
-                    os.path.join(db.ORDNER_AUSGABE, ORDNER_REPORT, report + ".pdf"),
+                    os.path.join(db.ORDNER_REPORT, report + ".typ"),
+                    os.path.join(db.ORDNER_AUSGABE, db.ORDNER_REPORT, report + ".pdf"),
                 ]
             )
 
@@ -277,12 +275,14 @@ def _(df_details, einheiten, switch_report):
                     "-dNOPAUSE",
                     "-dQUIET",
                     "-dBATCH",
-                    f"-sOutputFile={os.path.join(db.ORDNER_AUSGABE, ORDNER_REPORT, report.capitalize() + '.pdf')}",
-                    os.path.join(db.ORDNER_AUSGABE, ORDNER_REPORT, report + ".pdf"),
+                    f"-sOutputFile={os.path.join(db.ORDNER_AUSGABE, db.ORDNER_REPORT, report.capitalize() + '.pdf')}",
+                    os.path.join(db.ORDNER_AUSGABE, db.ORDNER_REPORT, report + ".pdf"),
                 ]
             )
 
-            os.unlink(os.path.join(db.ORDNER_AUSGABE, ORDNER_REPORT, report + ".pdf"))
+            os.unlink(
+                os.path.join(db.ORDNER_AUSGABE, db.ORDNER_REPORT, report + ".pdf")
+            )
     return (col_selection,)
 
 

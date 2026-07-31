@@ -10,6 +10,7 @@ ORDNER_EINGABE = "input"
 ORDNER_AUSGABE = "output"
 ORDNER_JAHRESBERICHT = "jahresbericht"
 ORDNER_AUSGABE_GRAFIK = "grafik"
+ORDNER_REPORT = "report"
 
 pfad_jahresbericht = os.path.join(ORDNER_AUSGABE, ORDNER_AUSGABE_GRAFIK)
 pfad_grafik = os.path.join(ORDNER_AUSGABE, ORDNER_AUSGABE_GRAFIK)
