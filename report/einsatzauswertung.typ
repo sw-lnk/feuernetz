@@ -1,20 +1,18 @@
-#import "data.typ": feuerwehr
+#import "lib.typ": report, status_image, data_table
 
-#set page(footer: [
-  #datetime.today().display("[day].[month].[year]")
-  #h(1fr)
-  #feuerwehr
-  #h(1fr)
-  Einsatzauswertung
-])
-
-#show heading.where(level: 1): it => { pagebreak(weak: true); it }
-
-#let status_image(path, width: 95%) = {
-  align(center)[
-    #image(path, width: width )
+#let contact = [*Leitung der Feuerwehr*\
+    #link("mailto:wehrleitung@feuerwehr-hamminkeln.de")[
+      wehrleitung$at$feuerwehr-hamminkeln.de
+    ]\
+    Brüner Straße 9, 46499 Hamminkeln
   ]
-}
+
+#report(
+  doc-title: "Einsatzauswertung Gesamt",
+  author: "Feuerwehr Hamminkeln",
+  logo: image("../input/0_logo-FW-HMM.png", width: 85%),
+  contact: contact
+)[
 
 = Statuszeiten LE Hamminkeln
 #status_image("../output/grafik/Statuszeiten_HMM.1.png")
@@ -37,3 +35,8 @@
 
 = Statuszeiten LE Mehrhoog
 #status_image("../output/grafik/Statuszeiten_HMM.6.png")
+
+#set page(flipped: true)
+= Einsatzübersicht
+#data_table("../output/statuszeiten_gesamt.csv")
+]
