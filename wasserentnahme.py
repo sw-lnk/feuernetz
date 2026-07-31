@@ -8,16 +8,15 @@ app = marimo.App(width="medium")
 def _():
     # Initialization code that runs before all other cells
     import os
-    import marimo as mo
-    import polars as pl
-    import pandas as pd
 
     import folium
+    import marimo as mo
+    import pandas as pd
+    import polars as pl
     from folium.plugins import MarkerCluster
 
-    from database import database as db
-
     import database.fn_config as fn_config
+    from database import database as db
 
     return MarkerCluster, db, fn_config, folium, mo, os, pd, pl
 
@@ -46,11 +45,9 @@ def _(df_wasser, mo):
 @app.cell
 def _(mo):
     # Karte für Kommunalverwaltung oder Einsatzdienst
-    zwecke = ['Einsatz', 'Kommunalverwaltung']
+    zwecke = ["Einsatz", "Kommunalverwaltung"]
     zweck_input = mo.ui.dropdown(
-        options=zwecke,
-        label='Verwendungszweck',
-        value=zwecke[-1]
+        options=zwecke, label="Verwendungszweck", value=zwecke[-1]
     )
     zweck_input
     return (zweck_input,)
@@ -60,8 +57,7 @@ def _(mo):
 def _(config_allgemein, mo):
     # Name der Kommune
     name_input = mo.ui.text(
-        label='Name der Kommune',
-        value=config_allgemein['kommune_name']
+        label="Name der Kommune", value=config_allgemein["kommune_name"]
     )
     name_input
     return
@@ -71,9 +67,7 @@ def _(config_allgemein, mo):
 def _(list_plz, mo):
     # Postleitzahl der Kommune
     plz_input = mo.ui.dropdown(
-        options=list_plz,
-        label='Postleitzahl',
-        value=list_plz[0]
+        options=list_plz, label="Postleitzahl", value=list_plz[0]
     )
     plz_input
     return
@@ -83,8 +77,7 @@ def _(list_plz, mo):
 def _(config_allgemein, mo):
     # Amtlicher Gemeindeschlüssel (AGS)
     ags_input = mo.ui.text(
-        label='Amtlicher Gemeindeschlüssel (AGS)',
-        value=config_allgemein['kommune_id']
+        label="Amtlicher Gemeindeschlüssel (AGS)", value=config_allgemein["kommune_id"]
     )
     ags_input
     return (ags_input,)
@@ -114,16 +107,16 @@ def _(df_ui, df_wasser):
 def _(pd):
     def find_NE_SW(geoJson):
         # Extract coordinates from municipality border
-        data = geoJson['geometry']['coordinates'][0]
+        data = geoJson["geometry"]["coordinates"][0]
 
         # create dataframe from coordinate points
-        df = pd.DataFrame(data, columns = ['longitude', 'latitude'])
+        df = pd.DataFrame(data, columns=["longitude", "latitude"])
 
         # Find corner points South-West
-        sw = df[['latitude', 'longitude']].min().values.tolist()
+        sw = df[["latitude", "longitude"]].min().values.tolist()
 
         # Find corner points North-East
-        ne = df[['latitude', 'longitude']].max().values.tolist()
+        ne = df[["latitude", "longitude"]].max().values.tolist()
 
         # Find corner points North-West
         nw = [df.latitude.max(), df.longitude.min()]
@@ -139,32 +132,37 @@ def _(pd):
 @app.cell
 def _(folium):
     # Karte erstellen
-    map = folium.Map(control_scale = True, zoom_start=13)
+    map = folium.Map(control_scale=True, zoom_start=13)
     return (map,)
 
 
 @app.cell
 def _(config_allgemein, data_geo, folium, map):
     # Kommunalegrenze der Karte hinzufügen
-    styl = {'color':'black', 'fillColor':'#00000000', 'weight':1}
+    styl = {"color": "black", "fillColor": "#00000000", "weight": 1}
 
-    folium.GeoJson(data = data_geo, name=config_allgemein['kommune_name'], style_function=lambda y:styl, control=False).add_to(map)
+    folium.GeoJson(
+        data=data_geo,
+        name=config_allgemein["kommune_name"],
+        style_function=lambda y: styl,
+        control=False,
+    ).add_to(map)
     return
 
 
 @app.function
 def icon_color(typ: str) -> tuple:
-    if typ == 'Zisterne':
-        icon = 'glass-water-droplet'
+    if typ == "Zisterne":
+        icon = "glass-water-droplet"
         color = "beige"
-    elif typ == 'Löschwasserbrunnen':
-        icon = 'arrow-up-from-ground-water'
+    elif typ == "Löschwasserbrunnen":
+        icon = "arrow-up-from-ground-water"
         color = "green"
-    elif typ == 'Hydrant':
-        icon = 'arrow-up-from-water-pump'
+    elif typ == "Hydrant":
+        icon = "arrow-up-from-water-pump"
         color = "blue"
     else:
-        icon = 'question'
+        icon = "question"
         color = "gray"
 
     return icon, color
@@ -173,30 +171,34 @@ def icon_color(typ: str) -> tuple:
 @app.cell
 def _(MarkerCluster, df, folium, map, pl, zweck_input):
     # Marker pro Wasserentnahmestelle setzen
-    typen = sorted(set(df.get_column('Materialtyp').to_list()))
+    typen = sorted(set(df.get_column("Materialtyp").to_list()))
 
-    #TODO: Kennzeichnung wenn Entnahmestelle nicht einsatzbereit ist. Farblich oder FeatureSubGroup?
-    status_aus_betrieb = ['Instandhaltung notwendig', 'irreparable/defekt', 'ausgemustert']
-    status_einsatzbereit = ['einsatzbereit', 'Prüfung notwendig']
-    status_sonstige = ['unbekannt', 'auf Lager', 'in Beschaffung']
+    # TODO: Kennzeichnung wenn Entnahmestelle nicht einsatzbereit ist. Farblich oder FeatureSubGroup?
+    status_aus_betrieb = [
+        "Instandhaltung notwendig",
+        "irreparable/defekt",
+        "ausgemustert",
+    ]
+    status_einsatzbereit = ["einsatzbereit", "Prüfung notwendig"]
+    status_sonstige = ["unbekannt", "auf Lager", "in Beschaffung"]
 
-    fg_defekt = folium.FeatureGroup(name='Außer Betrieb', show=False)
+    fg_defekt = folium.FeatureGroup(name="Außer Betrieb", show=False)
 
-    if zweck_input.value == 'Kommunalverwaltung':
+    if zweck_input.value == "Kommunalverwaltung":
         fg_defekt.add_to(map)
 
     for typ in typen:
         # fg = folium.FeatureGroup(name=typ).add_to(map)
         fg = MarkerCluster(name=typ).add_to(map)
 
-        df_filter = df.filter(pl.col('Materialtyp').eq(typ))
+        df_filter = df.filter(pl.col("Materialtyp").eq(typ))
 
         for row in df_filter.iter_rows(named=True):
-            einheit_kurz = row['Ausgegeben an Einheit'].split(' ')[-1][1:5]
-            status = row['Status']
+            einheit_kurz = row["Ausgegeben an Einheit"].split(" ")[-1][1:5]
+            status = row["Status"]
 
-            if typ in ['Zisterne', 'Löschwasserbrunnen']:
-                html = f'''
+            if typ in ["Zisterne", "Löschwasserbrunnen"]:
+                html = f"""
                     <small>{typ}</small><br>
                     <h4>{row["Bezeichner"]}</h4>
                     <p>{row["Anschluss"]}</p>
@@ -208,9 +210,9 @@ def _(MarkerCluster, df, folium, map, pl, zweck_input):
                     <br>
                     <small><a href="https://maps.google.com/?q={row["Längengrad"]},{row["Breitengrad"]}" target="_blank">Google Maps</a></small>
                     <small><a href="https://maps.apple.com/?q={row["Längengrad"]},{row["Breitengrad"]}" target="_blank">Apple Maps</a></small>
-                '''
-            elif typ in ['Hydrant']:
-                html = f'''
+                """
+            elif typ in ["Hydrant"]:
+                html = f"""
                     <small>{row["Typ"]}</small><br>
                     <h4>{row["Bezeichner"]}</h4>
                     <p>{row["Leitungsart"]} {row["Leitungsdurchmesser"]}</p>
@@ -221,26 +223,22 @@ def _(MarkerCluster, df, folium, map, pl, zweck_input):
                     <br>
                     <small><a href="https://maps.google.com/?q={row["Längengrad"]},{row["Breitengrad"]}" target="_blank">Google Maps</a></small>
                     <small><a href="https://maps.apple.com/?q={row["Längengrad"]},{row["Breitengrad"]}" target="_blank">Apple Maps</a></small>
-                '''
+                """
             else:
-                html = row['Bezeichner']
+                html = row["Bezeichner"]
 
             try:
                 icon, color = icon_color(typ)
 
                 if status in status_aus_betrieb:
-                    color = 'black'
+                    color = "black"
                 elif status in status_sonstige:
-                    color = 'light'+color
+                    color = "light" + color
 
                 marker = folium.Marker(
-                    location=[row['Längengrad'], row['Breitengrad']],
+                    location=[row["Längengrad"], row["Breitengrad"]],
                     popup=folium.Popup(html, max_width=2048),
-                    icon=folium.Icon(
-                        color=color,
-                        prefix='fa',
-                        icon=icon
-                    )
+                    icon=folium.Icon(color=color, prefix="fa", icon=icon),
                 )
 
                 if status in status_aus_betrieb:
@@ -259,19 +257,15 @@ def _(db, folium, map, mo, os, pl):
     # Marker pro POI setzen
     try:
         df_poi = db.lese_poi()
-        poi_typen = sorted(set(df_poi.get_column('Typ').to_list()))
+        poi_typen = sorted(set(df_poi.get_column("Typ").to_list()))
 
         for poi_t in poi_typen:
             fg_poi = folium.FeatureGroup(name=poi_t).add_to(map)
-            for poi in df_poi.filter(pl.col('Typ').eq(poi_t)).iter_rows(named=True):
+            for poi in df_poi.filter(pl.col("Typ").eq(poi_t)).iter_rows(named=True):
                 folium.Marker(
-                    location=(poi['Längengrad'], poi['Breitengrad']),
-                    popup=poi['Benennung'],
-                    icon=folium.Icon(
-                        color=poi['Farbe'],
-                        prefix='fa',
-                        icon=poi['Icon']
-                    )
+                    location=(poi["Längengrad"], poi["Breitengrad"]),
+                    popup=poi["Benennung"],
+                    icon=folium.Icon(color=poi["Farbe"], prefix="fa", icon=poi["Icon"]),
                 ).add_to(fg_poi)
     except:
         mo.md(f"## Datei {os.path.join(db.ORDNER_EINGABE, 'poi.csv')} nicht gefunden.")
@@ -287,7 +281,7 @@ def _(data_geo, find_NE_SW, map):
 
 @app.cell
 def _(folium, map):
-    folium.TileLayer('opentopomap', show=False).add_to(map)
+    folium.TileLayer("opentopomap", show=False).add_to(map)
     return
 
 
@@ -306,7 +300,7 @@ def _(map):
 
 @app.cell
 def _(db, map, os):
-    map.save(os.path.join(db.ORDNER_AUSGABE, 'wasserentnahmestellen.html'))
+    map.save(os.path.join(db.ORDNER_AUSGABE, "wasserentnahmestellen.html"))
     return
 
 

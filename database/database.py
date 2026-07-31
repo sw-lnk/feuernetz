@@ -1,14 +1,15 @@
+import json
 import os
 from pathlib import Path
+
 import polars as pl
-import json
 
 import database.fn_config as fn_config
 
-ORDNER_EINGABE = 'input'
-ORDNER_AUSGABE = 'output'
-ORDNER_JAHRESBERICHT = 'jahresbericht'
-ORDNER_AUSGABE_GRAFIK = 'grafik'
+ORDNER_EINGABE = "input"
+ORDNER_AUSGABE = "output"
+ORDNER_JAHRESBERICHT = "jahresbericht"
+ORDNER_AUSGABE_GRAFIK = "grafik"
 
 pfad_jahresbericht = os.path.join(ORDNER_AUSGABE, ORDNER_AUSGABE_GRAFIK)
 pfad_grafik = os.path.join(ORDNER_AUSGABE, ORDNER_AUSGABE_GRAFIK)
@@ -39,94 +40,102 @@ if not os.path.exists(pfad_jahresbericht):
 
 
 def postleitzahl_list() -> list[int]:
-    plz = config_allgemein['postleitzahlen']
-    return [int(p.strip()) for p in plz.split(',')]
+    plz = config_allgemein["postleitzahlen"]
+    return [int(p.strip()) for p in plz.split(",")]
 
 
 def entferne_ignorierte_ids(df: pl.DataFrame) -> pl.DataFrame:
-    id_prefix = config_data['id_prefix']
-    ids_to_ignore = [id_prefix+id.strip() for id in config_data['id_ignore'].split(',')]
+    id_prefix = config_data["id_prefix"]
+    ids_to_ignore = [
+        id_prefix + id.strip() for id in config_data["id_ignore"].split(",")
+    ]
     return df.filter(pl.col("FEUERnetz-ID").is_in(ids_to_ignore).not_())
 
 
 def lese_stammdaten() -> pl.DataFrame:
-  df = pl.read_csv(
-    os.path.join(ORDNER_EINGABE, 'Personalliste.csv'),
-    separator=';',
-    encoding="iso-8859-1",
-  )
-  df = entferne_ignorierte_ids(df)
-  df = df.with_columns(pl.col('Geburtsdatum').str.to_datetime(DATUM_FORMAT1))
-  df = df.with_columns(pl.col('Angelegt am').str.to_datetime(DATUM_FORMAT1))
-  return df
+    df = pl.read_csv(
+        os.path.join(ORDNER_EINGABE, "Personalliste.csv"),
+        separator=";",
+        encoding="iso-8859-1",
+    )
+    df = entferne_ignorierte_ids(df)
+    df = df.with_columns(pl.col("Geburtsdatum").str.to_datetime(DATUM_FORMAT1))
+    df = df.with_columns(pl.col("Angelegt am").str.to_datetime(DATUM_FORMAT1))
+    return df
 
 
-def lese_rollen() -> pl.DataFrame:    
+def lese_rollen() -> pl.DataFrame:
     df = pl.read_excel(
         os.path.join(ORDNER_EINGABE, "Personal - Rollenauswertung.xlsx"),
     )
     df = entferne_ignorierte_ids(df)
-    df = df.with_columns(pl.col('Start').str.to_datetime(DATUM_FORMAT2))
-    df = df.with_columns(pl.col('Ende').str.to_datetime(DATUM_FORMAT2))
+    df = df.with_columns(pl.col("Start").str.to_datetime(DATUM_FORMAT2))
+    df = df.with_columns(pl.col("Ende").str.to_datetime(DATUM_FORMAT2))
     return df
-  
 
-def lese_qualifikationen() -> pl.DataFrame:    
+
+def lese_qualifikationen() -> pl.DataFrame:
     df = pl.read_excel(
-        os.path.join(ORDNER_EINGABE, 'Personal - Qualifikationsexport.xlsx'),
+        os.path.join(ORDNER_EINGABE, "Personal - Qualifikationsexport.xlsx"),
     )
     df = entferne_ignorierte_ids(df)
-    df = df.with_columns(pl.col('Start').cast(str))
-    df = df.with_columns(pl.col('Start').str.to_datetime(DATUM_FORMAT1))
-    df = df.with_columns(pl.col('Ende').cast(str))
-    df = df.with_columns(pl.col('Ende').str.to_datetime(DATUM_FORMAT1))
+    df = df.with_columns(pl.col("Start").cast(str))
+    df = df.with_columns(pl.col("Start").str.to_datetime(DATUM_FORMAT1))
+    df = df.with_columns(pl.col("Ende").cast(str))
+    df = df.with_columns(pl.col("Ende").str.to_datetime(DATUM_FORMAT1))
     return df
 
 
-def lese_dienstgrade() -> pl.DataFrame:    
+def lese_dienstgrade() -> pl.DataFrame:
     df = pl.read_excel(
         os.path.join(ORDNER_EINGABE, "Personal - Beförderungshistorie.xlsx"),
     )
     df = entferne_ignorierte_ids(df)
-    df = df.with_columns([
-        pl.col('Ernannt ab').str.to_datetime(DATUM_FORMAT2),
-        pl.col('Urkundendatierung').str.to_datetime(DATUM_FORMAT2)
-    ])
+    df = df.with_columns(
+        [
+            pl.col("Ernannt ab").str.to_datetime(DATUM_FORMAT2),
+            pl.col("Urkundendatierung").str.to_datetime(DATUM_FORMAT2),
+        ]
+    )
     return df
-    
 
-def lese_einsatzdaten() -> pl.DataFrame:    
-    #df = pl.read_excel(os.path.join(ORDNER_EINGABE, "Einsatzverwaltung.xlsx"))
-    #df = df.with_columns(pl.col('Beginn').str.to_datetime(DATUM_FORMAT3))
+
+def lese_einsatzdaten() -> pl.DataFrame:
+    # df = pl.read_excel(os.path.join(ORDNER_EINGABE, "Einsatzverwaltung.xlsx"))
+    # df = df.with_columns(pl.col('Beginn').str.to_datetime(DATUM_FORMAT3))
     df = pl.read_csv(
         os.path.join(ORDNER_EINGABE, "Einsatzexport.csv"),
-        separator=';',
+        separator=";",
         encoding="iso-8859-1",
     )
-    df = df.with_columns(pl.col('Beginn').str.to_datetime(DATUM_FORMAT5))
-    df = df.with_columns(pl.col('Ende').str.to_datetime(DATUM_FORMAT5))
-        
+    df = df.with_columns(pl.col("Beginn").str.to_datetime(DATUM_FORMAT5))
+    df = df.with_columns(pl.col("Ende").str.to_datetime(DATUM_FORMAT5))
+
     return df
 
 
 def lese_einsatz_einheiten_details() -> pl.DataFrame:
     df = pl.read_excel(os.path.join(ORDNER_EINGABE, "Einsatz - Ausrückezeiten.xlsx"))
-    df = df.with_columns([
-        pl.col('Beginn').str.to_datetime(DATUM_FORMAT4),
-        pl.col('Alarm').str.to_datetime(DATUM_FORMAT4),
-        pl.col('Ausruecken S3').str.to_datetime(DATUM_FORMAT4),
-        pl.col('Eintreffen S4').str.to_datetime(DATUM_FORMAT4),
-        pl.col('Ende S2').str.to_datetime(DATUM_FORMAT4),
-    ])
-    
-    df = df.with_columns([
-        pl.when(pl.col('VF').is_nan()).then(0.0).cast(int).alias('VF'),
-        pl.when(pl.col('ZF').is_nan()).then(0.0).cast(int).alias('ZF'),
-        pl.when(pl.col('GF').is_nan()).then(0.0).cast(int).alias('GF'),
-        pl.when(pl.col('FM (SB)').is_nan()).then(0.0).cast(int).alias('FM (SM)'),
-        pl.when(pl.col('davon AGT').is_nan()).then(0.0).cast(int).alias('davon AGT'),
-    ])
-    
+    df = df.with_columns(
+        [
+            pl.col("Beginn").str.to_datetime(DATUM_FORMAT4),
+            pl.col("Alarm").str.to_datetime(DATUM_FORMAT4),
+            pl.col("Ausruecken S3").str.to_datetime(DATUM_FORMAT4),
+            pl.col("Eintreffen S4").str.to_datetime(DATUM_FORMAT4),
+            pl.col("Ende S2").str.to_datetime(DATUM_FORMAT4),
+        ]
+    )
+
+    df = df.with_columns(
+        [
+            pl.col("VF").cast(int).replace(0, None),
+            pl.col("ZF").cast(int).replace(0, None),
+            pl.col("GF").cast(int).replace(0, None),
+            pl.col("FM (SB)").cast(int).replace(0, None),
+            pl.col("davon AGT").cast(int).replace(0, None),
+        ]
+    )
+
     return df
 
 
@@ -134,26 +143,32 @@ def lese_wasserentnahmestellen() -> pl.DataFrame:
     paths = sorted(Path(ORDNER_EINGABE).glob("Wasserentnahmestellen_*.csv"))
     dfs = []
     for p in paths:
-        df = pl.read_csv(p, separator=';', encoding="iso-8859-1")
+        df = pl.read_csv(p, separator=";", encoding="iso-8859-1")
         dfs.append(df)
 
-    df_all = pl.concat(dfs, how="diagonal_relaxed")    
-    
-    return df_all.with_columns(pl.col('Produktionsdatum').str.to_datetime(DATUM_FORMAT2, ambiguous='null', strict=False))
+    df_all = pl.concat(dfs, how="diagonal_relaxed")
+
+    return df_all.with_columns(
+        pl.col("Produktionsdatum").str.to_datetime(
+            DATUM_FORMAT2, ambiguous="null", strict=False
+        )
+    )
 
 
 def lese_geodaten(gemeindeschluessel: str) -> dict:
     # Load border of viewed municipality
-    geoJson = json.load(open(os.path.join(ORDNER_EINGABE, 'gemeinden_simplify20.geojson')))
-    for element in geoJson['features']:
-        if element['properties']['AGS'] == gemeindeschluessel:
+    geoJson = json.load(
+        open(os.path.join(ORDNER_EINGABE, "gemeinden_simplify20.geojson"))
+    )
+    for element in geoJson["features"]:
+        if element["properties"]["AGS"] == gemeindeschluessel:
             return element
 
 
 def lese_poi() -> pl.DataFrame:
     return pl.read_csv(
-        os.path.join(ORDNER_EINGABE, 'poi.csv'),
-        separator=';',
+        os.path.join(ORDNER_EINGABE, "poi.csv"),
+        separator=";",
         encoding="iso-8859-1",
     )
 

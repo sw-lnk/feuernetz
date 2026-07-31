@@ -1,1 +1,0 @@
-#let feuerwehr = "Feuerwehr Hamminkeln"

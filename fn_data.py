@@ -1,4 +1,5 @@
 import datetime as dt
+
 # Tage pro Monat
 tage_je_monat = {
     1: 31,
@@ -15,9 +16,10 @@ tage_je_monat = {
     12: 31,
 }
 
+
 def datum_jahreshauptversammlung(jahr: int) -> dt.datetime:
     # find date for the annual general meeting (last saturday in january)
-    for d in [31,30,29,28]:
+    for d in [31, 30, 29, 28]:
         try:
             last_day = dt.datetime(year=jahr, month=1, day=d)
             break
@@ -25,6 +27,6 @@ def datum_jahreshauptversammlung(jahr: int) -> dt.datetime:
             print(d)
             continue
 
-    offset = (last_day.weekday() - 5)%7
-    
+    offset = (last_day.weekday() - 5) % 7
+
     return last_day - dt.timedelta(days=offset)

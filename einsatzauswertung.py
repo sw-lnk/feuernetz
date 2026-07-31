@@ -472,7 +472,7 @@ def _(df_details, df_einsatz):
         datei_name_list = ["Statuszeiten"]
         if kennung:
             datei_name_list.append(kennung)
-        if ortsteil != None:
+        if ortsteil is not None:
             datei_name_list.append(*ortsteil)
 
         datei_name = "_".join(datei_name_list)
